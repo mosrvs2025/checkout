@@ -1,0 +1,8 @@
+{
+  "name": "exit-pass",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Exit Pass — a prototype of grocery checkout redesigned around the shopper's phone.",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
