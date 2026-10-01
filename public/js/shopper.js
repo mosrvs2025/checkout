@@ -152,7 +152,7 @@ function resolveSensor() {
 function itemRow(i) {
   const row = el(`
     <div class="item" data-key="${i.key}">
-      <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.emoji}</div>
+      <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.image ? `<img src="${i.image}" alt="" loading="lazy" onerror="this.replaceWith('${i.emoji}')">` : i.emoji}</div>
       <div class="item-body">
         <div class="item-name">${i.name}${i.age ? ' <span class="tag">21+</span>' : ''}</div>
         <div class="item-detail">${i.detail || ''}</div>
@@ -201,20 +201,77 @@ function flyToTotal(fromEl, emoji) {
   setTimeout(() => f.remove(), 650);
 }
 
+const CATEGORY_EMOJI = [
+  [/beverage|drink|soda|water|juice|coffee|tea/, '🥤'], [/dair|milk|cheese|yogurt|butter/, '🥛'], [/snack|chip|crisp|cracker/, '🍿'],
+  [/cereal|breakfast|oat/, '🥣'], [/chocolate|candy|confection|sweet|cookie|biscuit/, '🍫'], [/bread|bakery/, '🍞'],
+  [/pasta|noodle|rice/, '🍝'], [/sauce|condiment|spread|ketchup|dressing/, '🫙'], [/frozen|ice-cream/, '🧊'],
+  [/fruit|vegetable|produce/, '🥕'], [/meat|poultry|sausage|chicken|beef/, '🥩'], [/fish|seafood/, '🐟'],
+  [/wine|beer|alcohol|spirit/, '🍷'], [/beauty|cosmetic|shampoo|soap|hygiene/, '🧴'], [/pet|dog|cat/, '🐾'],
+];
+const guessEmoji = (cat = '') => (CATEGORY_EMOJI.find(([re]) => re.test(cat.toLowerCase())) || [0, '🏷️'])[1];
+const isAlcohol = (cat = '') => /en:(wines|beers|alcoholic-beverages|spirits)|alcohol/i.test(cat);
+const lookupCache = new Map();
+
+export async function lookupProduct(code) {
+  if (lookupCache.has(code)) return lookupCache.get(code);
+  let out = null;
+  try { // Server-side lookup across several product databases (Vercel function / local server).
+    const r = await fetch(`api/lookup?code=${code}`, { signal: AbortSignal.timeout(7000) });
+    if (r.ok && r.headers.get('content-type')?.includes('json')) out = await r.json();
+  } catch {}
+  if (!out) { // Static hosting without functions: query Open Food Facts straight from the browser.
+    try {
+      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_en,brands,quantity,image_front_small_url,categories_tags`, { signal: AbortSignal.timeout(5000) });
+      const p = (await r.json()).product;
+      const name = p && (p.product_name_en || p.product_name);
+      out = name ? { found: true, name, brand: (p.brands || '').split(',')[0], size: p.quantity || '', image: p.image_front_small_url || '', category: (p.categories_tags || []).join(' ') } : { found: false };
+    } catch { out = { found: false, offline: true }; }
+  }
+  if (out.found) lookupCache.set(code, out);
+  return out;
+}
+
+const clean = (v) => String(v || '').replace(/[<>"'`&\\]/g, '').trim();
+
 async function onBarcode(code) {
   const known = byUpc[code];
   if (known) return addItem(known);
-  const base = { key: 'upc-' + code, upc: code, name: 'Item ' + code.slice(-5), detail: `UPC ${code}`, emoji: '🏷️', tint: '#EEF0F3', aisle: 'Aisle ' + (1 + (hashNum(code) % 14)) };
-  base.price = +(1.99 + (hashNum(code) % 1200) / 100).toFixed(2);
-  try {
-    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,quantity`, { signal: AbortSignal.timeout(2500) });
-    const d = await r.json();
-    if (d.product?.product_name) {
-      base.name = [d.product.brands?.split(',')[0], d.product.product_name].filter(Boolean).join(' ').slice(0, 40);
-      base.detail = d.product.quantity || base.detail;
-    }
-  } catch {}
-  addItem(base);
+  const done = toast(`Identifying ${code}…`, 8000);
+  const raw = await lookupProduct(code);
+  const info = { ...raw, name: clean(raw.name), brand: clean(raw.brand), size: clean(raw.size), image: /^https:\/\//.test(raw.image || '') ? clean(raw.image) : '' };
+  done();
+  // Real prices need the store's price file; until then, a stable simulated price per UPC.
+  const price = +(1.99 + (hashNum(code) % 1200) / 100).toFixed(2);
+  const base = { key: 'upc-' + code, upc: code, price, tint: '#F2F3F5', aisle: 'Aisle ' + (1 + (hashNum(code) % 14)) };
+  if (info.found) {
+    const brand = info.brand && !info.name.toLowerCase().includes(info.brand.toLowerCase()) ? info.brand + ' ' : '';
+    addItem({ ...base, name: (brand + info.name).slice(0, 48), detail: [info.size, `UPC ${code}`].filter(Boolean).join(' · '), image: info.image, emoji: guessEmoji(info.category), age: isAlcohol(info.category) ? 21 : undefined });
+  } else {
+    nameUnknown(code, base, info.offline);
+  }
+}
+
+function nameUnknown(code, base, offline) {
+  const s = el(`
+    <div class="sheet-wrap">
+      <form class="sheet">
+        <div class="grab"></div>
+        <h3>${offline ? 'No signal to look this up' : 'New product to us'}</h3>
+        <p class="muted" style="margin:-8px 0 14px">UPC ${code} isn't in the product databases yet. What is it?</p>
+        <input class="text-in" placeholder="e.g. Signature Select Tortilla Chips" autofocus />
+        <button class="btn primary xl" style="margin-top:14px">Add to cart</button>
+      </form>
+    </div>`);
+  document.body.append(s);
+  requestAnimationFrame(() => s.classList.add('open'));
+  const close = () => { s.classList.remove('open'); setTimeout(() => s.remove(), 300); };
+  s.onclick = (e) => { if (e.target === s) close(); };
+  s.querySelector('form').onsubmit = (e) => {
+    e.preventDefault();
+    const name = clean(s.querySelector('input').value) || `Item ${code.slice(-5)}`;
+    close();
+    addItem({ ...base, name, detail: `UPC ${code} · named by you`, emoji: '🏷️' });
+  };
 }
 
 // ---------------- Finish: pay + issue pass ----------------
@@ -406,9 +463,11 @@ function helpSheet() {
   s.querySelector('#restart').onclick = () => { close(); trip = null; try { localStorage.removeItem(KEY); } catch {} render(); };
 }
 
-export function toast(msg) {
+export function toast(msg, ms = 2600) {
   const t = el(`<div class="toast">${msg}</div>`);
   document.body.append(t);
   requestAnimationFrame(() => t.classList.add('in'));
-  setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 2600);
+  const hide = () => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); };
+  setTimeout(hide, ms);
+  return hide;
 }

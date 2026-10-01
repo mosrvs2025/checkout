@@ -38,7 +38,10 @@ Open `http://localhost:5173/#/demo` on a laptop. The server prints a LAN URL too
 - Deploy to GitHub Pages (workflow included; enable Pages → "GitHub Actions" in repo settings). Single-device sync works there, including `/#/demo`.
 - Or tunnel the local server for HTTPS plus cross-device sync, e.g. `npx localtunnel --port 5173` or `cloudflared tunnel --url http://localhost:5173`.
 
-Any real product barcode works. Names are looked up on Open Food Facts and prices are simulated.
+### How scanning works
+- **Decoding:** Android Chrome uses the phone's built-in barcode detector. iPhone and other browsers use ZXing compiled to WebAssembly, which is bundled in `public/vendor` so it doesn't depend on a CDN. Reads EAN-13, UPC-A, UPC-E and EAN-8. A code is accepted only if its check digit is valid and the same code appears on two frames in a row, which rules out misreads. There's a flashlight button on phones that support it.
+- **Identification:** `api/lookup.js` (a Vercel function, also served by `npm start`) searches Open Food Facts, UPCitemdb, and Open Products, Beauty and Pet Food Facts in parallel, and returns the name, brand, size and photo. If nothing matches, the shopper types a name. On hosting without functions, the app queries Open Food Facts directly.
+- **Prices are simulated** (stable per UPC). Real prices would come from the store's price file.
 
 ## Deploy on Vercel (recommended for testing in a store)
 

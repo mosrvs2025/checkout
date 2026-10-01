@@ -5,13 +5,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const lookupHandler = require('./api/lookup.js');
 
 const PORT = process.env.PORT || 5173;
 const ROOT = path.join(__dirname, 'public');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.wasm': 'application/wasm',
 };
 
 const trips = new Map(); // tripId -> latest trip snapshot
@@ -52,6 +53,8 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+
+  if (url.pathname === '/api/lookup') { lookupHandler(req, res).catch(() => { res.writeHead(500).end(); }); return; }
 
   if (url.pathname === '/api/ping') { res.writeHead(200).end('ok'); return; }
 
