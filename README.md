@@ -40,6 +40,17 @@ Open `http://localhost:5173/#/demo` on a laptop. The server prints a LAN URL too
 
 Any real product barcode works. Names are looked up on Open Food Facts and prices are simulated.
 
+## Deploy on Vercel (recommended for testing in a store)
+
+1. On vercel.com: **Add New → Project → Import** `mosrvs2025/checkout`.
+2. Leave the defaults. `vercel.json` already sets Framework to *Other*, no build step, and `public` as the output folder. Click **Deploy**.
+3. Open the `https://….vercel.app` URL on your phone. HTTPS means **camera barcode scanning works**. Use Add to Home Screen to get a full-screen app.
+
+On Vercel there's no relay server, so screens sync only between tabs on the same device:
+- **Phone-only demo:** shop, tap Done, and on an amber pass tap **Simulate associate tap ✓**.
+- **Laptop demo:** `/#/demo` shows the phone and the store side by side, fully live.
+- **Two devices at once** (phone plus an associate tablet): run `npm start` on a laptop and expose it over HTTPS with `npx localtunnel --port 5173`.
+
 ## Demo script (60 seconds)
 
 1. Start shopping and add a few items. The total ticks up and the dashboard dot moves through the aisles.
