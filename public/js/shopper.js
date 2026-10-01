@@ -1,39 +1,67 @@
-import { STORE, CATALOG, byKey, byUpc, money, uid, totals, count, hashNum, haptic, el, bus, decidePass, fmtDuration } from './shared.js';
+import { STORE, CATALOG, byUpc, money, uid, totals, savings, count, hashNum, haptic, el, bus, decidePass, fmtDuration, passPayload, recallCode } from './shared.js';
 import { openScanner } from './scanner.js';
+import { itemFromCode, clean } from './products.js';
+import qrcode from '../vendor/qrcode.js';
 
 const KEY = 'exitpass.trip';
-const AVG_LINE_MS = 7 * 60e3 + 40e3; // today's simulated average wait in a staffed lane
+const PROFILE = 'exitpass.profile';
+const HISTORY = 'exitpass.history';
+const AVG_LINE_MS = 10 * 60e3 + 40e3; // today's simulated wait in a staffed lane
 
-let trip = load();
-let root;
-let tick;
+const read = (k, d = null) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const write = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-function load() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; } }
+let trip = read(KEY);
+let profile = read(PROFILE);
+let history = read(HISTORY, []);
+let root, tick;
+let tab = 'home', viewing = null, onboardStep = 0, laneBanner = null;
+
 function save(publish = true) {
-  try { localStorage.setItem(KEY, JSON.stringify(trip)); } catch {}
+  write(KEY, trip);
   if (publish && trip) bus.send({ type: 'trip', trip });
 }
 
 function newTrip() {
   trip = {
-    id: uid(), name: 'You', real: true, status: 'shopping',
-    startedAt: Date.now(), items: [], trust: 0.9, sensor: null,
-    zone: 'Entrance', progress: 0.05,
+    id: uid(), name: 'You', real: true, status: 'shopping', shopperName: profile?.name || 'Guest',
+    card: profile?.card || 'Visa ···· 4242', startedAt: Date.now(), items: [], trust: 0.9, sensor: null,
+    zone: 'Entrance', progress: 0.05, adjustments: [],
   };
   save();
+}
+
+function endTrip() {
+  if (trip && trip.status === 'done' && !history.find((h) => h.id === trip.id)) {
+    history = [{ ...trip, archivedAt: Date.now() }, ...history].slice(0, 25);
+    write(HISTORY, history);
+  }
+  trip = null; laneBanner = null; write(KEY, null); tab = 'home';
 }
 
 export function mountShopper(r) {
   root = r;
   document.body.className = 'shopper-body';
   bus.on((msg) => {
-    if (!trip) return;
-    if (msg.type === 'verify' && msg.tripId === trip.id && trip.status === 'pass') {
+    if (!trip || msg.tripId !== trip.id) { if (msg.type === 'reset' && trip) { trip = null; write(KEY, null); render(); } return; }
+    if (msg.type === 'verify' && trip.status === 'pass') {
       trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = msg.by;
       save(); haptic([20, 40, 20]); render();
     }
-    if (msg.type === 'reset') { trip = null; try { localStorage.removeItem(KEY); } catch {} render(); }
-    if (msg.type === 'help-ack' && msg.tripId === trip.id) toast(`${msg.by} is on the way`);
+    if (msg.type === 'pos.recall' && trip.status === 'pass') { laneBanner = msg.laneName; haptic(15); render(); }
+    if (msg.type === 'pos.adjust') {
+      const ex = trip.items.find((i) => i.key === msg.item.key);
+      if (msg.kind === 'add') ex ? ex.qty++ : trip.items.push({ ...msg.item, qty: 1, addedAtLane: msg.laneName });
+      if (msg.kind === 'void' && ex) { ex.qty--; if (ex.qty <= 0) trip.items = trip.items.filter((i) => i !== ex); }
+      trip.adjustments = [...(trip.adjustments || []), { kind: msg.kind, name: msg.item.name, amount: msg.amount, lane: msg.laneName }];
+      save(); haptic([10, 30, 10]); render();
+      toast(msg.kind === 'add' ? `${msg.laneName} added ${msg.item.name} · ${money(msg.amount)} charged` : `${msg.item.name} removed · ${money(-msg.amount)} refunded`, 3500);
+    }
+    if (msg.type === 'pos.close' && trip.status !== 'done') {
+      trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = `${msg.laneName} · ${msg.by}`; trip.closedTxn = msg.txnId;
+      save(); haptic([20, 40, 20]); render();
+    }
+    if (msg.type === 'help-ack') toast(`${msg.by} is on the way`);
   });
   render();
 }
@@ -43,24 +71,27 @@ function render() {
   const aisleX = root.querySelector('#aisle')?.scrollLeft || 0, y = scrollY;
   root.innerHTML = '';
   requestAnimationFrame(() => { const a = root.querySelector('#aisle'); if (a) { a.scrollLeft = aisleX; scrollTo(0, y); } });
-  if (!trip) return root.append(welcome());
+  if (!profile) return root.append(onboarding());
+  if (viewing) return root.append(receiptView(viewing, { fromHistory: true }));
+  if (!trip) return root.append(home());
   if (trip.status === 'shopping') return root.append(shop());
   if (trip.status === 'pass') return root.append(pass());
   if (trip.status === 'done') return root.append(done());
 }
 
-// ---------------- Welcome ----------------
-function welcome() {
+// ---------------- Onboarding ----------------
+function onboarding() {
+  const steps = [welcomeStep, phoneStep, codeStep, payStep];
+  return steps[onboardStep]();
+}
+const next = () => { onboardStep++; haptic(); render(); };
+
+function welcomeStep() {
   const v = el(`
     <main class="screen welcome">
-      <div class="welcome-top">
-        <div class="store-chip"><span class="dot live"></span> ${STORE.name} · ${STORE.city} #${STORE.number}</div>
-      </div>
+      <div class="welcome-top"><div class="store-chip"><span class="dot live"></span> ${STORE.name} · ${STORE.city} #${STORE.number}</div></div>
       <div class="welcome-hero">
-        <div class="hero-pass">
-          <div class="hp-ring"></div>
-          <div class="hp-check">✓</div>
-        </div>
+        <div class="hero-pass"><div class="hp-ring"></div><div class="hp-check">✓</div></div>
         <h1>Checkout happens<br/>while you shop.</h1>
         <p class="lede">Scan as things go in your cart. When you're done, you're already paid — just walk out with your Exit Pass.</p>
       </div>
@@ -69,11 +100,144 @@ function welcome() {
         <div><b>2</b><span>Tap Done — paid instantly</span></div>
         <div><b>3</b><span>Walk out. No line.</span></div>
       </div>
-      <button class="btn primary xl" id="go">Start shopping</button>
+      <button class="btn primary xl" id="go">Get started</button>
       <p class="fine">Simulated prototype · No real payment is taken</p>
     </main>`);
-  v.querySelector('#go').onclick = () => { haptic(); newTrip(); render(); };
+  v.querySelector('#go').onclick = next;
   return v;
+}
+
+function phoneStep() {
+  const v = el(`
+    <main class="screen onb">
+      <div class="onb-top"><span class="onb-dots"><i class="on"></i><i></i><i></i></span></div>
+      <div class="vfu">vons <b>for U</b></div>
+      <h2>Sign in with your Vons for U number</h2>
+      <p class="muted">Your member prices and rewards apply automatically.</p>
+      <form id="f"><input class="text-in big" type="tel" inputmode="tel" autocomplete="tel" placeholder="(626) 555-0142" id="ph" /><button class="btn primary xl">Send code</button></form>
+      <button class="link onb-skip" id="guest">Continue as guest</button>
+    </main>`);
+  const ph = v.querySelector('#ph');
+  ph.oninput = () => { const d = ph.value.replace(/\D/g, '').slice(0, 10); ph.value = d.length > 6 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : d.length > 3 ? `(${d.slice(0, 3)}) ${d.slice(3)}` : d; };
+  v.querySelector('#f').onsubmit = (e) => { e.preventDefault(); onbPhone = ph.value || '(626) 555-0142'; next(); };
+  v.querySelector('#guest').onclick = () => { onbPhone = ''; onboardStep = 3; render(); };
+  return v;
+}
+let onbPhone = '';
+
+function codeStep() {
+  const v = el(`
+    <main class="screen onb">
+      <div class="onb-top"><button class="link" id="back">‹ Back</button><span class="onb-dots"><i></i><i class="on"></i><i></i></span></div>
+      <h2>Enter the code we texted to ${onbPhone}</h2>
+      <div class="otp">${'<span></span>'.repeat(6)}</div>
+      <p class="muted center" id="hint">From Messages…</p>
+    </main>`);
+  v.querySelector('#back').onclick = () => { onboardStep = 1; render(); };
+  const code = String(100000 + (hashNum(onbPhone) % 899999));
+  const boxes = v.querySelectorAll('.otp span');
+  [...code].forEach((d, i) => setTimeout(() => { boxes[i].textContent = d; boxes[i].classList.add('on'); haptic(5); if (i === 5) setTimeout(next, 450); }, 900 + i * 90));
+  return v;
+}
+
+function payStep() {
+  const v = el(`
+    <main class="screen onb">
+      <div class="onb-top"><span class="onb-dots"><i></i><i></i><i class="on"></i></span></div>
+      <h2>How should we pay when you tap Done?</h2>
+      <input class="text-in big" id="nm" placeholder="Your first name" autocomplete="given-name" />
+      <div class="pay-opts">
+        <button class="pay-opt on" data-c="Apple Pay"><span class="po-logo"></span><div><b>Apple Pay</b><small>Face ID at Done</small></div></button>
+        <button class="pay-opt" data-c="Visa ···· 4242"><span class="po-logo visa">VISA</span><div><b>Visa ···· 4242</b><small>Saved card</small></div></button>
+        <button class="pay-opt" data-c="Vons Rewards Mastercard ···· 8810"><span class="po-logo mc">●●</span><div><b>Rewards Mastercard ···· 8810</b><small>2× points on groceries</small></div></button>
+      </div>
+      <button class="btn primary xl" id="done">Start using Exit Pass</button>
+      <p class="fine">Nothing is charged until you tap Done in the store.</p>
+    </main>`);
+  let card = 'Apple Pay';
+  v.querySelectorAll('.pay-opt').forEach((b) => b.onclick = () => { card = b.dataset.c; v.querySelectorAll('.pay-opt').forEach((x) => x.classList.toggle('on', x === b)); haptic(6); });
+  v.querySelector('#done').onclick = () => {
+    profile = { name: clean(v.querySelector('#nm').value) || 'there', phone: onbPhone, member: !!onbPhone, card, since: Date.now() };
+    write(PROFILE, profile); onboardStep = 0; haptic([10, 30, 10]); render();
+  };
+  return v;
+}
+
+// ---------------- Home (no active trip) ----------------
+function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+
+function home() {
+  const savedMin = Math.round(history.reduce((s, t) => s + Math.max(0, AVG_LINE_MS - ((t.doneAt || 0) - (t.arrivedAt || 0))), 0) / 60e3);
+  const memberSaved = history.reduce((s, t) => s + savings(t.items), 0);
+  const v = el(`
+    <main class="screen home">
+      <header class="home-head"><div><div class="muted sm">${greeting()}</div><h1>${profile.name === 'there' ? 'Welcome' : profile.name}</h1></div><button class="avatar-btn" id="acct">${(profile.name[0] || 'G').toUpperCase()}</button></header>
+      ${tab === 'home' ? `
+        <section class="store-card">
+          <div class="sc-row"><span class="dot live"></span><span>You're at <b>${STORE.name} ${STORE.city}</b> · #${STORE.number}</span></div>
+          <div class="sc-meta">Lanes right now: ~${fmtDuration(AVG_LINE_MS)} wait · Exit Pass: no wait</div>
+          <button class="btn primary xl" id="go">Start shopping</button>
+        </section>
+        <section class="stat-row">
+          <div class="stat"><b>${savedMin}<small> min</small></b><span>line time skipped</span></div>
+          <div class="stat"><b>${money(memberSaved)}</b><span>${profile.member ? 'Vons for U savings' : 'join Vons for U to save'}</span></div>
+          <div class="stat"><b>${history.length}</b><span>trips</span></div>
+        </section>
+        ${history.length ? `<h3 class="sec-h">Recent</h3>${historyList(3)}` : `<div class="hint-card"><b>Tip</b> Point your camera at any barcode in the store. Name brands are recognized automatically.</div>`}
+      ` : ''}
+      ${tab === 'trips' ? `<h3 class="sec-h">Your trips</h3>${history.length ? historyList(25) : '<div class="empty"><div class="empty-art">🧾</div><p>Receipts from your Exit Pass trips show up here.</p></div>'}` : ''}
+      ${tab === 'account' ? accountHtml() : ''}
+      <nav class="tabbar">
+        <button data-t="home" class="${tab === 'home' ? 'on' : ''}"><i>⌂</i>Home</button>
+        <button data-t="trips" class="${tab === 'trips' ? 'on' : ''}"><i>🧾</i>Trips</button>
+        <button data-t="account" class="${tab === 'account' ? 'on' : ''}"><i>◎</i>Account</button>
+      </nav>
+    </main>`);
+  v.querySelector('#go')?.addEventListener('click', () => { haptic(); newTrip(); render(); });
+  v.querySelector('#acct').onclick = () => { tab = 'account'; render(); };
+  v.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; haptic(5); render(); });
+  v.querySelectorAll('[data-h]').forEach((b) => b.onclick = () => { viewing = history.find((h) => h.id === b.dataset.h); render(); });
+  v.querySelector('#signout')?.addEventListener('click', () => { if (confirm('Sign out and clear trips on this phone?')) { write(PROFILE, null); write(HISTORY, null); profile = null; history = []; tab = 'home'; render(); } });
+  bindDemoControls(v);
+  return v;
+}
+
+function historyList(n) {
+  return `<div class="hist">${history.slice(0, n).map((t) => `
+    <button class="hist-row" data-h="${t.id}">
+      <div class="hr-ic ${t.pass?.tier || 'green'}">✓</div>
+      <div class="hr-b"><b>${STORE.name} ${STORE.city}</b><span>${new Date(t.paidAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${count(t.items)} items · out in ${fmtDuration(Math.max(4000, (t.doneAt || 0) - (t.arrivedAt || 0)))}</span></div>
+      <div class="hr-p">${money(totals(t.items).total)}</div>
+    </button>`).join('')}</div>`;
+}
+
+function accountHtml() {
+  return `
+    <section class="acct">
+      <div class="acct-row"><span>Name</span><b>${profile.name}</b></div>
+      <div class="acct-row"><span>Vons for U</span><b>${profile.member ? profile.phone : 'Not linked'}</b></div>
+      <div class="acct-row"><span>Pays with</span><b>${profile.card}</b></div>
+      <button class="btn block ghost" id="signout">Sign out</button>
+    </section>
+    ${demoControlsHtml()}`;
+}
+
+function demoControlsHtml() {
+  return `<div class="demo-tools">
+    <div class="dt-head">Demo controls</div>
+    <div class="seg" id="force"><button data-f="">Natural</button><button data-f="green">Force green</button><button data-f="audit">Force spot-check</button></div>
+    <div class="dt-links"><a href="#/pos">Register (Lane 4)</a><a href="#/sco">Self-checkout</a><a href="#/associate">Associate</a><a href="#/store">Store</a><a href="#/demo">Demo view</a></div>
+    <div class="dt-sync">Sync: ${bus.live ? `cross-device (${bus.backend})` : 'this device only'}</div>
+  </div>`;
+}
+
+function bindDemoControls(v) {
+  const cur = forced() || '';
+  v.querySelectorAll('[data-f]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.f === cur);
+    b.onclick = () => { try { b.dataset.f ? sessionStorage.setItem('exitpass.force', b.dataset.f) : sessionStorage.removeItem('exitpass.force'); } catch {} v.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); };
+  });
+  v.querySelectorAll('.dt-links a').forEach((a) => a.onclick = (e) => { e.preventDefault(); location.hash = a.getAttribute('href'); });
 }
 
 // ---------------- Shopping ----------------
@@ -84,12 +248,13 @@ function shop() {
     <main class="screen shop">
       <header class="shop-head">
         <div class="store-chip"><span class="dot live"></span> ${STORE.name} #${STORE.number}</div>
-        <button class="icon-btn" id="help" aria-label="Get help">?</button>
+        <button class="icon-btn" id="help" aria-label="Help and options">⋯</button>
       </header>
       <section class="total-card">
         <div class="tc-label">Your cart</div>
         <div class="tc-total" id="total">${money(total)}</div>
         <div class="tc-sub">${n ? `${n} item${n > 1 ? 's' : ''} · tax included · ready to pay` : 'Scan your first item to begin'}</div>
+        ${savings(trip.items) > 0 ? `<div class="tc-save">Vons for U savings <b>−${money(savings(trip.items))}</b></div>` : ''}
         <div class="tc-status ${trip.sensor?.open ? 'warn' : ''}">
           ${trip.sensor?.open
             ? '<span class="dot amber"></span> Your cart felt something we didn\'t see'
@@ -117,8 +282,8 @@ function shop() {
   [...trip.items].reverse().forEach((i) => list.append(itemRow(i)));
 
   const aisle = v.querySelector('#aisle');
-  for (const p of CATALOG) {
-    const b = el(`<button class="tile" style="--tint:${p.tint}"><span class="tile-emoji">${p.emoji}</span><span class="tile-name">${p.name}</span><span class="tile-price">${money(p.price)}</span></button>`);
+  for (const p of CATALOG.filter((x) => !x.hidden)) {
+    const b = el(`<button class="tile" style="--tint:${p.tint}"><span class="tile-emoji">${p.emoji}</span><span class="tile-name">${p.name}</span><span class="tile-price">${p.reg ? `<s>${money(p.reg)}</s> ` : ''}${money(p.price)}</span></button>`);
     b.onclick = () => addItem(p, b);
     aisle.append(b);
   }
@@ -155,7 +320,7 @@ function itemRow(i) {
       <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.image ? `<img src="${i.image}" alt="" loading="lazy" onerror="this.replaceWith('${i.emoji}')">` : i.emoji}</div>
       <div class="item-body">
         <div class="item-name">${i.name}${i.age ? ' <span class="tag">21+</span>' : ''}</div>
-        <div class="item-detail">${i.detail || ''}</div>
+        <div class="item-detail">${i.reg ? `<span class="club">Vons for U</span> ` : ''}${i.detail || ''}</div>
       </div>
       <div class="qty">
         <button aria-label="Remove one" data-d="-1">−</button><span>${i.qty}</span><button aria-label="Add one" data-d="1">+</button>
@@ -201,54 +366,12 @@ function flyToTotal(fromEl, emoji) {
   setTimeout(() => f.remove(), 650);
 }
 
-const CATEGORY_EMOJI = [
-  [/beverage|drink|soda|water|juice|coffee|tea/, '🥤'], [/dair|milk|cheese|yogurt|butter/, '🥛'], [/snack|chip|crisp|cracker/, '🍿'],
-  [/cereal|breakfast|oat/, '🥣'], [/chocolate|candy|confection|sweet|cookie|biscuit/, '🍫'], [/bread|bakery/, '🍞'],
-  [/pasta|noodle|rice/, '🍝'], [/sauce|condiment|spread|ketchup|dressing/, '🫙'], [/frozen|ice-cream/, '🧊'],
-  [/fruit|vegetable|produce/, '🥕'], [/meat|poultry|sausage|chicken|beef/, '🥩'], [/fish|seafood/, '🐟'],
-  [/wine|beer|alcohol|spirit/, '🍷'], [/beauty|cosmetic|shampoo|soap|hygiene/, '🧴'], [/pet|dog|cat/, '🐾'],
-];
-const guessEmoji = (cat = '') => (CATEGORY_EMOJI.find(([re]) => re.test(cat.toLowerCase())) || [0, '🏷️'])[1];
-const isAlcohol = (cat = '') => /en:(wines|beers|alcoholic-beverages|spirits)|alcohol/i.test(cat);
-const lookupCache = new Map();
-
-export async function lookupProduct(code) {
-  if (lookupCache.has(code)) return lookupCache.get(code);
-  let out = null;
-  try { // Server-side lookup across several product databases (Vercel function / local server).
-    const r = await fetch(`api/lookup?code=${code}`, { signal: AbortSignal.timeout(7000) });
-    if (r.ok && r.headers.get('content-type')?.includes('json')) out = await r.json();
-  } catch {}
-  if (!out) { // Static hosting without functions: query Open Food Facts straight from the browser.
-    try {
-      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_en,brands,quantity,image_front_small_url,categories_tags`, { signal: AbortSignal.timeout(5000) });
-      const p = (await r.json()).product;
-      const name = p && (p.product_name_en || p.product_name);
-      out = name ? { found: true, name, brand: (p.brands || '').split(',')[0], size: p.quantity || '', image: p.image_front_small_url || '', category: (p.categories_tags || []).join(' ') } : { found: false };
-    } catch { out = { found: false, offline: true }; }
-  }
-  if (out.found) lookupCache.set(code, out);
-  return out;
-}
-
-const clean = (v) => String(v || '').replace(/[<>"'`&\\]/g, '').trim();
-
 async function onBarcode(code) {
-  const known = byUpc[code];
-  if (known) return addItem(known);
-  const done = toast(`Identifying ${code}…`, 8000);
-  const raw = await lookupProduct(code);
-  const info = { ...raw, name: clean(raw.name), brand: clean(raw.brand), size: clean(raw.size), image: /^https:\/\//.test(raw.image || '') ? clean(raw.image) : '' };
-  done();
-  // Real prices need the store's price file; until then, a stable simulated price per UPC.
-  const price = +(1.99 + (hashNum(code) % 1200) / 100).toFixed(2);
-  const base = { key: 'upc-' + code, upc: code, price, tint: '#F2F3F5', aisle: 'Aisle ' + (1 + (hashNum(code) % 14)) };
-  if (info.found) {
-    const brand = info.brand && !info.name.toLowerCase().includes(info.brand.toLowerCase()) ? info.brand + ' ' : '';
-    addItem({ ...base, name: (brand + info.name).slice(0, 48), detail: [info.size, `UPC ${code}`].filter(Boolean).join(' · '), image: info.image, emoji: guessEmoji(info.category), age: isAlcohol(info.category) ? 21 : undefined });
-  } else {
-    nameUnknown(code, base, info.offline);
-  }
+  const hide = byUpc[code] ? () => {} : toast(`Identifying ${code}…`, 8000);
+  const res = await itemFromCode(code);
+  hide();
+  if (res.item) addItem(res.item);
+  else nameUnknown(code, res.base, res.offline);
 }
 
 function nameUnknown(code, base, offline) {
@@ -281,11 +404,12 @@ function finish() {
     <div class="sheet-wrap">
       <div class="sheet pay">
         <div class="grab"></div>
-        <div class="pay-row"><span class="pay-logo"> Pay</span><button class="link" id="x">Cancel</button></div>
+        <div class="pay-row"><span class="pay-logo">${(trip.card || '').startsWith('Apple') ? ' Pay' : 'Exit Pass'}</span><button class="link" id="x">Cancel</button></div>
         <div class="pay-line"><span>VONS #${STORE.number}</span><b>${money(total)}</b></div>
-        <div class="pay-line muted"><span>Card</span><span>Visa ···· 4242</span></div>
+        <div class="pay-line muted"><span>Pay with</span><span>${trip.card}</span></div>
+        ${savings(trip.items) > 0 ? `<div class="pay-line muted"><span>Vons for U savings</span><span class="green-t">−${money(savings(trip.items))}</span></div>` : ''}
         <div class="pay-line muted"><span>Items</span><span>${count(trip.items)} · verified by smart cart</span></div>
-        <button class="btn primary xl" id="confirm">Confirm & get Exit Pass</button>
+        <button class="btn primary xl" id="confirm">${(trip.card || '').startsWith('Apple') ? 'Pay with Face ID' : 'Pay & get Exit Pass'}</button>
         <div class="pay-progress"><div class="spinner"></div><span>Authorizing…</span></div>
       </div>
     </div>`);
@@ -302,7 +426,7 @@ function finish() {
       haptic([10, 40, 10]);
       setTimeout(() => {
         close();
-        trip.paidAt = Date.now();
+        trip.paidAt = Date.now(); trip.authCode = String(100000 + Math.floor(Math.random() * 899999));
         trip.arrivedAt = Date.now();
         trip.pass = decidePass(trip, { force: forced() });
         trip.status = trip.pass.tier === 'green' ? 'done' : 'pass';
@@ -326,48 +450,47 @@ function revealPass() {
 }
 
 // ---------------- The pass ----------------
-function passCode(seed) {
-  // A live, rotating visual code — screenshots go stale, like a transit pass.
-  const n = 21, cells = [];
-  const finder = (x, y) => [[0, 0], [n - 7, 0], [0, n - 7]].some(([fx, fy]) => x >= fx && x < fx + 7 && y >= fy && y < fy + 7);
-  const finderOn = (x, y) => { const fx = x < 7 ? x : x - (n - 7), fy = y < 7 ? y : y - (n - 7); const d = Math.max(Math.abs(fx - 3), Math.abs(fy - 3)); return d !== 2; };
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const on = finder(x, y) ? finderOn(x, y) : hashNum(seed + ':' + x + ',' + y) % 2 === 0;
-    if (on) cells.push(`<rect x="${x}" y="${y}" width="1.02" height="1.02"/>`);
-  }
-  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges">${cells.join('')}</svg>`;
+function qrSvg(text) {
+  const q = qrcode(0, 'M');
+  q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
 }
+const fmtRecall = (c) => `${c.slice(0, 2)} ${c.slice(2, 6)} ${c.slice(6, 10)} ${c.slice(10)}`;
 
 function pass() {
   const p = trip.pass;
   const { total } = totals(trip.items);
   const v = el(`
     <main class="screen pass-screen amber">
+      ${laneBanner ? `<div class="lane-banner"><div class="spinner light"></div><span><b>${laneBanner}</b> has your basket</span></div>` : ''}
       <div class="pass-card amber">
         <div class="pc-top">
           <span class="pc-brand">EXIT PASS</span>
           <span class="pc-live"><span class="dot pulse"></span><span id="clock"></span></span>
         </div>
         <div class="pc-title">Paid. Quick check<br/>on the way out.</div>
-        <div class="pc-lane">Head to <b>${p.lane}</b> · ~10 sec</div>
-        <div class="pc-code" id="code">${passCode(p.code + Math.floor(Date.now() / 5000))}</div>
+        <div class="pc-lane">Show this at <b>${p.lane}</b>, any lane, or self-checkout</div>
+        <div class="pc-code" id="code"></div>
+        <div class="pc-recall">${fmtRecall(recallCode(trip.id))}</div>
         <div class="pc-checks">
-          <div class="pcc-head">Associate checks ${p.checks.length === 1 ? 'just this' : `only these ${p.checks.length}`}</div>
+          <div class="pcc-head">They'll check ${p.checks.length === 1 ? 'just this' : `only these ${p.checks.length}`}</div>
           ${p.checks.map((c) => `<div class="pcc"><span class="pcc-e">${c.emoji}</span><span class="pcc-n">${c.name}</span><span class="pcc-r">${c.reason}</span></div>`).join('')}
         </div>
         <div class="pc-foot"><span>${count(trip.items)} items · ${money(total)} paid</span><span>#${trip.id}</span></div>
       </div>
-      <p class="pass-note">${count(trip.items) > p.checks.length ? `Not ${count(trip.items)} items re-scanned. Just ${p.checks.length}.` : 'A 10-second glance, no re-scanning.'} Your receipt is already on your phone.</p>
-      <button class="btn ghost" id="demo-verify">Simulate associate tap ✓</button>
+      <p class="pass-note">${count(trip.items) > p.checks.length ? `Not ${count(trip.items)} items re-scanned. Just ${p.checks.length}.` : 'A 10-second glance, no re-scanning.'} Turn your brightness up for the scanner.</p>
+      <button class="link center" id="demo-verify">Demo: simulate the check</button>
     </main>`);
   const clock = v.querySelector('#clock');
+  let lastPayload = '';
   const update = () => {
     clock.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-    v.querySelector('#code').innerHTML = passCode(p.code + Math.floor(Date.now() / 5000));
+    const payload = passPayload(trip);
+    if (payload !== lastPayload) { lastPayload = payload; v.querySelector('#code').innerHTML = qrSvg(payload); }
   };
   update(); tick = setInterval(update, 1000);
   v.querySelector('#demo-verify').onclick = () => {
-    trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = 'Maria';
+    trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = 'Maria (handheld)';
     save(); haptic([20, 40, 20]); render();
   };
   return v;
@@ -399,32 +522,42 @@ function renderGreenWalkout() {
 
 function done() {
   if (!trip.exited && trip.pass?.tier === 'green') { renderGreenWalkout(); return document.createComment(''); }
-  const { sub, tax, total } = totals(trip.items);
-  const exitMs = Math.max(4000, (trip.doneAt || Date.now()) - (trip.arrivedAt || trip.paidAt || Date.now()));
-  const saved = Math.max(0, AVG_LINE_MS + 3 * 60e3 - exitMs);
+  return receiptView(trip, {});
+}
+
+function receiptView(t, { fromHistory }) {
+  const { sub, tax, total } = totals(t.items);
+  const saved = savings(t.items);
+  const exitMs = Math.max(4000, (t.doneAt || Date.now()) - (t.arrivedAt || t.paidAt || Date.now()));
+  const skipped = Math.max(0, AVG_LINE_MS - exitMs);
   const v = el(`
     <main class="screen receipt">
+      ${fromHistory ? '<div class="r-nav"><button class="link" id="back">‹ Trips</button></div>' : ''}
       <div class="r-hero">
         <div class="r-check">✓</div>
         <div class="r-big">${fmtDuration(exitMs)}</div>
         <div class="r-cap">from "Done" to out the door</div>
       </div>
       <div class="compare">
-        <div class="cmp-row"><span>You, with Exit Pass</span><div class="bar"><i style="width:${Math.max(3, (exitMs / (AVG_LINE_MS + 3 * 60e3)) * 100)}%" class="g"></i></div><b>${fmtDuration(exitMs)}</b></div>
-        <div class="cmp-row"><span>Lane 4 right now</span><div class="bar"><i style="width:100%" class="r"></i></div><b>${fmtDuration(AVG_LINE_MS + 3 * 60e3)}</b></div>
-        <div class="cmp-save">You skipped about <b>${Math.round(saved / 60e3)} minutes</b> of standing in line.</div>
+        <div class="cmp-row"><span>Exit Pass</span><div class="bar"><i style="width:${Math.max(3, (exitMs / AVG_LINE_MS) * 100)}%" class="g"></i></div><b>${fmtDuration(exitMs)}</b></div>
+        <div class="cmp-row"><span>Staffed lanes</span><div class="bar"><i style="width:100%" class="r"></i></div><b>${fmtDuration(AVG_LINE_MS)}</b></div>
+        <div class="cmp-save">You skipped about <b>${Math.round(skipped / 60e3)} minutes</b> in line.</div>
       </div>
-      ${trip.verifiedBy ? `<div class="verified-by">Verified by ${trip.verifiedBy} · ${trip.pass.checks.length} item${trip.pass.checks.length > 1 ? 's' : ''} checked</div>` : ''}
+      ${t.verifiedBy ? `<div class="verified-by">Checked out at ${t.verifiedBy}${t.pass?.checks?.length ? ` · ${t.pass.checks.length} item${t.pass.checks.length > 1 ? 's' : ''} checked` : ''}</div>` : ''}
       <section class="r-card">
-        <div class="r-head"><b>${STORE.name} #${STORE.number}</b><span>${new Date(trip.paidAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div>
-        ${trip.items.map((i) => `<div class="r-line"><span>${i.emoji} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}</span><span>${money(i.price * i.qty)}</span></div>`).join('')}
-        <div class="r-line sep"><span>Subtotal</span><span>${money(sub)}</span></div>
+        <div class="r-head"><b>${STORE.name} #${STORE.number}</b><span>${new Date(t.paidAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div>
+        ${t.items.map((i) => `<div class="r-line"><span>${i.emoji || '🏷️'} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${i.addedAtLane ? ` <small class="muted">· added at ${i.addedAtLane}</small>` : ''}</span><span>${money(i.price * i.qty)}</span></div>`).join('')}
+        <div class="r-line sep"><span>Subtotal</span><span>${money(sub + saved)}</span></div>
+        ${saved > 0 ? `<div class="r-line green-t"><span>Vons for U savings</span><span>−${money(saved)}</span></div>` : ''}
         <div class="r-line"><span>Tax</span><span>${money(tax)}</span></div>
-        <div class="r-line total"><span>Paid · Visa 4242</span><span>${money(total)}</span></div>
+        <div class="r-line total"><span>Paid · ${t.card || 'Visa ···· 4242'}</span><span>${money(total)}</span></div>
+        ${(t.adjustments || []).map((a) => `<div class="r-line muted sm"><span>${a.kind === 'add' ? 'Added' : 'Refunded'} at ${a.lane}: ${a.name}</span><span>${money(a.amount)}</span></div>`).join('')}
+        <div class="r-foot">Auth ${t.authCode || '—'}${t.closedTxn ? ` · POS txn ${t.closedTxn}` : ''} · Exit Pass #${t.id}</div>
       </section>
-      <button class="btn primary xl" id="again">Start a new trip</button>
+      ${fromHistory ? '' : '<button class="btn primary xl" id="again">Done</button>'}
     </main>`);
-  v.querySelector('#again').onclick = () => { trip = null; try { localStorage.removeItem(KEY); } catch {} render(); };
+  v.querySelector('#again')?.addEventListener('click', () => { endTrip(); render(); });
+  v.querySelector('#back')?.addEventListener('click', () => { viewing = null; tab = 'trips'; render(); });
   return v;
 }
 
@@ -438,13 +571,8 @@ function helpSheet() {
         <button class="btn block" data-h="price">Price looks wrong</button>
         <button class="btn block" data-h="find">Can't find something</button>
         <button class="btn block" data-h="scan">Barcode won't scan</button>
-        <div class="demo-tools">
-          <div class="dt-head">Demo controls</div>
-          <div class="seg" id="force">
-            <button data-f="">Natural</button><button data-f="green">Force green</button><button data-f="audit">Force spot-check</button>
-          </div>
-          <button class="btn sm ghost" id="restart">Restart trip</button>
-        </div>
+        <button class="btn block ghost danger" id="cancel">Cancel this trip</button>
+        ${demoControlsHtml()}
       </div>
     </div>`);
   document.body.append(s);
@@ -455,12 +583,9 @@ function helpSheet() {
     bus.send({ type: 'help', tripId: trip.id, kind: b.textContent, aisle: trip.zone });
     close(); toast('An associate has been pinged with your location');
   });
-  const cur = forced() || '';
-  s.querySelectorAll('[data-f]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.f === cur);
-    b.onclick = () => { try { b.dataset.f ? sessionStorage.setItem('exitpass.force', b.dataset.f) : sessionStorage.removeItem('exitpass.force'); } catch {} s.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); };
-  });
-  s.querySelector('#restart').onclick = () => { close(); trip = null; try { localStorage.removeItem(KEY); } catch {} render(); };
+  bindDemoControls(s);
+  s.querySelectorAll('.dt-links a').forEach((a) => a.addEventListener('click', close));
+  s.querySelector('#cancel').onclick = () => { close(); trip.status = 'done'; save(); trip = null; write(KEY, null); render(); };
 }
 
 export function toast(msg, ms = 2600) {

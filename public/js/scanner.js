@@ -8,23 +8,22 @@ import { el, haptic } from './shared.js';
 // consecutive frames before we accept it.
 // Camera access requires HTTPS (Vercel/Pages give you that) or localhost.
 
-const FORMATS = ['ean_13', 'upc_a', 'upc_e', 'ean_8'];
-let detectorPromise;
+const PRODUCT = ['ean_13', 'upc_a', 'upc_e', 'ean_8'];
+const detectors = {};
 
-export function getDetector() {
-  detectorPromise ||= (async () => {
+export function getDetector(FORMATS = PRODUCT) {
+  return (detectors[FORMATS.join()] ||= (async () => {
     if ('BarcodeDetector' in window) {
       try {
         const supported = await window.BarcodeDetector.getSupportedFormats();
-        if (FORMATS.some((f) => supported.includes(f))) return new window.BarcodeDetector({ formats: FORMATS.filter((f) => supported.includes(f)) });
+        if (FORMATS.every((f) => supported.includes(f))) return new window.BarcodeDetector({ formats: FORMATS });
       } catch {}
     }
     const mod = await import('../vendor/barcode-detector.js');
     const wasm = new URL('../vendor/zxing_reader.wasm', import.meta.url).href;
     mod.setZXingModuleOverrides({ locateFile: (p, prefix) => (p.endsWith('.wasm') ? wasm : prefix + p) });
     return new mod.BarcodeDetector({ formats: FORMATS });
-  })();
-  return detectorPromise;
+  })());
 }
 
 // UPC-E -> UPC-A expansion so short codes match the same product as the full code.
@@ -55,7 +54,9 @@ export function normalize(raw, format) {
   return c;
 }
 
-export function openScanner({ onCode, hint = 'Point at a barcode' }) {
+// accept(raw) lets callers take non-product codes (e.g. the register reading an Exit Pass QR).
+export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, accept, placeholder = 'Or type the numbers under the barcode' }) {
+  const formats = qr ? [...PRODUCT, 'qr_code'] : PRODUCT;
   const v = el(`
     <div class="scanner">
       <video playsinline muted autoplay></video>
@@ -68,7 +69,7 @@ export function openScanner({ onCode, hint = 'Point at a barcode' }) {
       </div>
       <div class="scan-msg" id="msg">Starting camera…</div>
       <form class="scan-manual" id="manual">
-        <input inputmode="numeric" pattern="[0-9]*" placeholder="Or type the numbers under the barcode" />
+        <input inputmode="numeric" pattern="[0-9]*" placeholder="${placeholder}" />
         <button class="btn sm primary">Add</button>
       </form>
     </div>`);
@@ -94,7 +95,9 @@ export function openScanner({ onCode, hint = 'Point at a barcode' }) {
   v.querySelector('#close').onclick = stop;
   v.querySelector('#manual').onsubmit = (e) => {
     e.preventDefault();
-    const code = normalize(e.target.querySelector('input').value);
+    const raw = e.target.querySelector('input').value.trim();
+    if (accept?.(raw)) return hit(raw.toUpperCase());
+    const code = normalize(raw);
     if (code.length >= 8) hit(code);
   };
 
@@ -103,7 +106,7 @@ export function openScanner({ onCode, hint = 'Point at a barcode' }) {
       msg.textContent = 'Camera needs an https:// link. Type the barcode numbers instead.';
       return;
     }
-    const detectorReady = getDetector(); // load decoder while the camera starts
+    const detectorReady = getDetector(formats); // load decoder while the camera starts
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -140,6 +143,8 @@ export function openScanner({ onCode, hint = 'Point at a barcode' }) {
       if (video.readyState >= 2) {
         try {
           const codes = await detector.detect(video);
+          const passHit = accept && codes.find((c) => accept(c.rawValue));
+          if (passHit) return hit(passHit.rawValue);
           const good = codes.map((c) => normalize(c.rawValue, c.format)).find(validGtin);
           if (good && good === last) return hit(good);
           last = good || '';

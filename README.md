@@ -21,10 +21,14 @@ The missing idea is **targeted verification instead of exhaustive verification.*
 
 | Route | Who | What |
 |---|---|---|
-| `/` | Shopper (phone) | Scan → live total → Done → Exit Pass → receipt with time saved |
-| `/#/associate` | Associate (phone/tablet) | Verification queue showing only the items to check. One tap clears the shopper. |
-| `/#/store` | Front-end lead (screen/tablet) | Store radar, KPIs, 2½-minute arrival forecast, staffing recommendation, live feed |
-| `/#/demo` | Presenting on a laptop | Phone and store dashboard side by side, synced live |
+| `/` | Shopper (phone) | Sign in → scan → live total with member savings → Done → Exit Pass (live QR) → receipt. Trip history and account tabs. |
+| `/#/pos` | Cashier | **Register lane** modeled on the store's Toshiba TCx SKY + Magellan + keypad, running the Exit Pass extension. Recall a paid basket by scanning the phone's QR or keying the recall number, do the checks, add missed items (charged to the shopper's card), then close. Regular sales still work. `/#/pos/2` is Lane 2. |
+| `/#/sco` | Shopper at a kiosk | **Self-checkout**: hold up the pass and you're done. ID checks call the attendant. |
+| `/#/associate` | Associate handheld | Verification queue showing only the items to check |
+| `/#/store` | Front-end lead | Store radar, KPIs, arrival forecast, staffing recommendation, live feed of lane events |
+| `/#/demo` | Presenting on a laptop | Phone next to a switchable Store / Register / Self-checkout / Associate panel |
+
+The POS integration design, mapped to the hardware at the lane, is in **[docs/POS_INTEGRATION.md](docs/POS_INTEGRATION.md)**.
 
 ## Run it
 
@@ -32,43 +36,45 @@ The missing idea is **targeted verification instead of exhaustive verification.*
 npm start          # zero dependencies, Node 18+
 ```
 
-Open `http://localhost:5173/#/demo` on a laptop. The server prints a LAN URL too: open `/` on your phone and `/#/associate` on another device, and a tap on the associate device turns the shopper's pass green instantly.
-
-**Camera scanning needs HTTPS.** Over plain LAN HTTP the app falls back to typing a UPC and the "Quick add" tiles, which simulate scanning. For real barcode scanning in a store:
-- Deploy to GitHub Pages (workflow included; enable Pages → "GitHub Actions" in repo settings). Single-device sync works there, including `/#/demo`.
-- Or tunnel the local server for HTTPS plus cross-device sync, e.g. `npx localtunnel --port 5173` or `cloudflared tunnel --url http://localhost:5173`.
+Open `http://localhost:5173/#/demo`. Local sync between devices works out of the box.
 
 ### How scanning works
 - **Decoding:** Android Chrome uses the phone's built-in barcode detector. iPhone and other browsers use ZXing compiled to WebAssembly, which is bundled in `public/vendor` so it doesn't depend on a CDN. Reads EAN-13, UPC-A, UPC-E and EAN-8. A code is accepted only if its check digit is valid and the same code appears on two frames in a row, which rules out misreads. There's a flashlight button on phones that support it.
 - **Identification:** `api/lookup.js` (a Vercel function, also served by `npm start`) searches Open Food Facts, UPCitemdb, and Open Products, Beauty and Pet Food Facts in parallel, and returns the name, brand, size and photo. If nothing matches, the shopper types a name. On hosting without functions, the app queries Open Food Facts directly.
 - **Prices are simulated** (stable per UPC). Real prices would come from the store's price file.
 
-## Deploy on Vercel (recommended for testing in a store)
+## Deploy on Vercel
 
-1. On vercel.com: **Add New → Project → Import** `mosrvs2025/checkout`.
-2. Leave the defaults. `vercel.json` already sets Framework to *Other*, no build step, and `public` as the output folder. Click **Deploy**.
-3. Open the `https://….vercel.app` URL on your phone. HTTPS means **camera barcode scanning works**. Use Add to Home Screen to get a full-screen app.
+1. **Add New → Project → Import** `mosrvs2025/checkout`, keep the defaults, and click **Deploy**. `vercel.json` serves `public/`, and `api/` becomes serverless functions.
+2. **For cross-device sync** (phone + register + store screen on different devices): in the Vercel project go to **Storage → Create → Upstash for Redis** (free tier), connect it to the project, and redeploy. The sync function finds the `KV_REST_API_*` / `UPSTASH_REDIS_REST_*` variables automatically. The store dashboard header shows `Synced across devices (upstash)` when it's working.
+   - Without Upstash, sync falls back to memory inside one serverless instance. That often works for a quick demo but isn't reliable. Tabs on the same device always sync.
+3. Open the `https://….vercel.app` link on your phone and use **Add to Home Screen** for a full-screen app. HTTPS means camera scanning works.
 
-On Vercel there's no relay server, so screens sync only between tabs on the same device:
-- **Phone-only demo:** shop, tap Done, and on an amber pass tap **Simulate associate tap ✓**.
-- **Laptop demo:** `/#/demo` shows the phone and the store side by side, fully live.
-- **Two devices at once** (phone plus an associate tablet): run `npm start` on a laptop and expose it over HTTPS with `npx localtunnel --port 5173`.
+## Demo script (2 minutes, two devices)
 
-## Demo script (60 seconds)
+1. **Phone:** sign in (the code fills itself in), pick a card, then **Start shopping**. Scan real products or tap the quick-add tiles. Add the wine.
+2. On the 5th item the cart flags something unscanned. Tap *I didn't add anything* and it becomes a check item.
+3. Tap **Done** and pay. You get an amber Exit Pass with a live QR and a 12-digit recall number.
+4. **Laptop or tablet at `/#/pos`:** tap the Magellan bar and hold the phone's QR to the camera, or key the recall number on the keypad and press Enter. The paid basket appears with **BAL DUE $0.00**, and the phone shows "Lane 4 has your basket".
+5. Key `000000221474` (the paper bag barcode on the real lane) and press Enter. The bag is charged to the shopper's card and the phone gets a notification.
+6. Tap the ID check, then **COMPLETE**. The receipt prints on the lane and the phone flips to "6s from Done to out the door".
+7. Try `/#/sco` with a second trip, and a trip with no alcohol for a green "walk out" pass.
 
-1. Start shopping and add a few items. The total ticks up and the dashboard dot moves through the aisles.
-2. On the 5th item the cart "feels" something unscanned. Resolve it, or tap *I didn't add anything* to see that become a check item.
-3. Add wine, then tap **Done**. You get an amber pass: "Associate checks only these 2."
-4. On the associate screen, tap **Looks good**. The phone flips to the receipt: *"from Done to out the door: 9s"*, compared with the current lane wait.
-5. Start a new trip without alcohol or high-value items and you get a green pass: **"You're done. Walk out."**
-
-Use the **?** button on the phone to force a green pass or a spot-check and to restart the trip.
+Account → Demo controls on the phone can force a green pass or a spot-check.
 
 ## Architecture
 
-Static ES modules in `public/` with no build step. `server.js` is a ~70-line Node server with no dependencies. It serves the files and relays trip state across devices over Server-Sent Events. Without it, tabs on the same device still sync through `BroadcastChannel`.
+Static ES modules in `public/` with no build step. Third-party code is bundled in `public/vendor/`: the barcode decoder (ZXing WASM) and a QR code generator.
+
+- `api/sync.js` → `lib/sync.js`: cross-device event relay. Devices poll every ~1s. Backed by Upstash Redis on Vercel, or memory under `npm start`. `BroadcastChannel` covers tabs on the same device.
+- `api/lookup.js`: product identification by UPC
+- `server.js`: local server serving the same routes
 
 - `public/js/shared.js`: catalog, sync bus, and the **pass decision engine** (`decidePass`)
 - `public/js/shopper.js`: shopper app
 - `public/js/scanner.js`: camera scanning (native `BarcodeDetector`, or ZXing as a fallback on iOS)
 - `public/js/store.js`: store radar, forecast, associate queue, simulated shoppers
+- `public/js/pos.js`: register lane and self-checkout kiosk
+- `public/js/pos-gateway.js`: **the simulated POS integration** (recall / add / void / check / close, EJ lines, events)
+- `public/js/products.js`: product identification shared by the phone and the lanes
+- `public/sw.js`: offline app shell, for dead zones in the store

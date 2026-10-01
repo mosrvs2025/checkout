@@ -48,6 +48,14 @@ function onMsg(msg) {
     if (t && t.status === 'pass') { t.status = 'done'; t.doneAt = Date.now(); stats.exitTimes.push(Math.round((t.doneAt - t.arrivedAt) / 1000)); stats.verified++; log(`${msg.by} verified #${t.id} in ${fmtDuration(t.doneAt - t.arrivedAt)}`, 'good'); }
   }
   if (msg.type === 'help') { stats.helps.unshift({ ...msg, t: Date.now(), id: uid() }); log(`Help: "${msg.kind}" near ${msg.aisle}`, 'warn'); chime(); }
+  if (msg.type === 'pos.recall') log(`${msg.laneName} recalled Exit Pass #${msg.tripId} (${msg.method === 'scan-2d' ? 'scanned from phone' : 'keyed'})`, 'info');
+  if (msg.type === 'pos.adjust') log(`${msg.laneName} ${msg.kind === 'add' ? 'added' : 'voided'} ${msg.item.name} on #${msg.tripId} · ${money(Math.abs(msg.amount))} ${msg.kind === 'add' ? 'charged' : 'refunded'} to card`, 'warn');
+  if (msg.type === 'pos.close') {
+    const t = trips.get(msg.tripId);
+    if (t && t.status !== 'done') { t.status = 'done'; t.doneAt = Date.now(); stats.exitTimes.push(Math.round((t.doneAt - (t.arrivedAt || t.doneAt)) / 1000)); stats.verified++; }
+    log(`${msg.laneName} closed #${msg.tripId} in ${msg.seconds}s · ${money(msg.total)} prepaid · txn ${msg.txnId}`, 'good');
+  }
+  if (msg.type === 'pos.sale') { stats.laneTrips++; log(`${msg.laneName}: regular sale · ${msg.items} items · ${money(msg.total)}`, ''); }
   if (msg.type === 'reset') { for (const [id, t] of trips) if (!t.sim) trips.delete(id); }
 }
 
@@ -155,7 +163,7 @@ function layout() {
     <div class="ops">
       <header class="ops-head">
         <div class="brand"><span class="logo">✓</span> Front End <span class="muted">· ${STORE.name} ${STORE.city} #${STORE.number}</span></div>
-        <div class="ops-meta"><span id="relay"></span><span class="dot live"></span> <span id="clock"></span></div>
+        <div class="ops-meta"><a href="#/pos" class="ops-link">Register</a><a href="#/sco" class="ops-link">Self-checkout</a><a href="#/associate" class="ops-link">Associate</a><span id="relay"></span><span class="dot live"></span> <span id="clock"></span></div>
       </header>
       <section class="kpis" id="kpis"></section>
       <div class="ops-grid">
@@ -177,7 +185,7 @@ const $ = (s) => root.querySelector(s);
 
 function paint() {
   $('#clock').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-  if ($('#relay')) $('#relay').textContent = bus.live ? 'Multi-device relay on · ' : 'This device only · ';
+  if ($('#relay')) $('#relay').textContent = bus.live ? `Synced across devices (${bus.backend}) · ` : 'This device only · ';
   for (const t of trips.values()) {
     if (t.x == null) { [t.x, t.y] = zonePos('Entrance'); }
     const [tx, ty] = target(t);
