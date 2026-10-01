@@ -475,3 +475,30 @@ body { min-height: 100vh; }
 .sco .sky-lines { width: 100%; max-height: 300px; text-align: left; border: 1px solid var(--line); border-radius: 12px; }
 .sco-msg { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 14px 20px; border-radius: 14px; font-size: 16px; }
 .sco-msg.err { background: var(--red); }
+.dt-note { font-size: 12px; color: var(--mute); margin-top: -4px; }
+
+/* ================= Exit station (door scanner / greeter) ================= */
+.exit-body { background: #0c0d10; color: #fff; min-height: 100vh; }
+.exit { max-width: 560px; margin: 0 auto; padding: calc(var(--safe-t) + 16px) 16px 24px; display: grid; gap: 16px; }
+.exit-head { display: flex; align-items: center; gap: 10px; color: #9aa0ab; font-size: 14px; }
+.exit-head b { color: #fff; background: #12b76a; padding: 4px 10px; border-radius: 8px; letter-spacing: .12em; }
+.exit-net { margin-left: auto; }
+.exit-scan { display: grid; justify-items: center; gap: 10px; padding: 48px 20px; border-radius: 28px; background: #16181d; color: #fff; text-align: center; }
+.exit-scan b { font-size: 26px; } .exit-scan span { color: #9aa0ab; }
+.es-ring { width: 120px; height: 120px; border-radius: 30px; border: 5px solid #2bd97c; box-shadow: 0 0 40px rgba(43,217,124,.25); animation: live 2s infinite; }
+.exit-arr .sp-h { color: #9aa0ab; }
+.exit-arr .arr { background: #16181d; border: 1px solid #2d313a; color: #fff; border-radius: 12px; width: 100%; }
+.exit-arr .arr b { color: #ffd38a; } .exit-arr .arr.green b { color: #3ee08f; } .exit-arr .arr span { color: #9aa0ab; }
+.exit-arr .arr-empty { color: #6b7785; }
+.exit-card { border-radius: 28px; padding: 28px 20px; display: grid; gap: 12px; justify-items: center; text-align: center; min-height: 300px; align-content: center; animation: rise .4s; }
+.exit-card.green { background: linear-gradient(150deg, #20c978, #03854a); }
+.exit-card.amber { background: #2b2210; justify-items: stretch; text-align: left; }
+.ec-big { font-size: 34px; font-weight: 800; letter-spacing: -.03em; } .ec-sub { opacity: .85; }
+.ec-ok { width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.2); display: grid; place-items: center; font-size: 60px; font-weight: 800; animation: pop .5s; }
+.exit-chk { display: flex; gap: 12px; align-items: center; background: #fff4dd; color: #3a2a00; border-radius: 16px; padding: 14px; text-align: left; }
+.exit-chk span { font-size: 30px; } .exit-chk div { flex: 1; display: grid; } .exit-chk small { color: #8a5a00; }
+.exit-chk i { font-style: normal; font-weight: 700; font-size: 13px; color: #8a5a00; }
+.exit-chk.done { background: #d7f5e4; } .exit-chk.done i { color: #0b6b3a; font-size: 20px; }
+.exit-card .btn.ghost { color: #ffe0a3; box-shadow: inset 0 0 0 1.5px #5a4720; }
+.exit-msg { text-align: center; padding: 12px; border-radius: 12px; background: #1d2027; } .exit-msg.err { background: #4a1d1a; color: #ffb4ab; }
+.arr.green { border-color: #9fd8b6; }

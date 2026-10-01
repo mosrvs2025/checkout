@@ -8,11 +8,11 @@ Exit Pass is a working prototype of grocery checkout built from scratch around t
 
 Scan & Go apps still end at a register. A shopper scans everything, then waits in line so someone can audit it. Exit Pass takes the line out entirely:
 
-1. **Checkout happens while you shop.** Every item you scan goes into a running, tax-included total. A smart-cart weight sensor (simulated) checks that what's in the cart matches what was scanned. If it doesn't match, the app asks you about it while you're still in the aisle, not at the exit.
+1. **Checkout happens while you shop.** Every item you scan goes into a running, tax-included total. No special hardware is needed. If the store has smart carts (Instacart Caper, Shopic clip-ons and similar), the cart's scale catches unscanned items while you're still in the aisle, and the store can spot-check less often.
 2. **Paying takes one tap, wherever you are.** Tap **Done** and you've paid before you reach the front.
-3. **The store issues a pass based on that trip:**
-   - **Green: walk out.** No line and no scan.
-   - **Amber: a 10-second check.** The associate doesn't re-scan 40 items. The system names the 1–3 that matter: alcohol needing an ID check, a high-value item, an unmatched weight, or a random audit.
+3. **The store issues a pass based on that trip, and everyone scans out at the exit:**
+   - **Green: scan out in about 2 seconds.** No line and no checks.
+   - **Amber: a 10-second check** at the exit, Express Check, any lane or self-checkout. Nobody re-scans 40 items. The system names the 1–3 that matter: alcohol needing an ID check, a high-value item, an unmatched cart weight, or a random audit (about 1 in 5 trips phone-only, 1 in 10 with a smart cart).
 4. **The front end sees what's coming.** Every cart in the store shows up live, so the lead can staff the front based on predicted arrivals instead of reacting once the lines are already long.
 
 The missing idea is **targeted verification instead of exhaustive verification.** The register stops being a 5-minute scanning station and becomes a 10-second glance, and most trips skip it entirely.
@@ -23,6 +23,7 @@ The missing idea is **targeted verification instead of exhaustive verification.*
 |---|---|---|
 | `/` | Shopper (phone) | Sign in → scan → live total with member savings → Done → Exit Pass (live QR) → receipt. Trip history and account tabs. |
 | `/#/pos` | Cashier | **Register lane** modeled on the store's Toshiba TCx SKY + Magellan + keypad, running the Exit Pass extension. Recall a paid basket by scanning the phone's QR or keying the recall number, do the checks, add missed items (charged to the shopper's card), then close. Regular sales still work. `/#/pos/2` is Lane 2. |
+| `/#/exit` | Door scanner / greeter | Every paid shopper scans out here. Green passes are released immediately, and amber passes show just the items to check. |
 | `/#/sco` | Shopper at a kiosk | **Self-checkout**: hold up the pass and you're done. ID checks call the attendant. |
 | `/#/associate` | Associate handheld | Verification queue showing only the items to check |
 | `/#/store` | Front-end lead | Store radar, KPIs, arrival forecast, staffing recommendation, live feed of lane events |
@@ -53,12 +54,12 @@ Open `http://localhost:5173/#/demo`. Local sync between devices works out of the
 ## Demo script (2 minutes, two devices)
 
 1. **Phone:** sign in (the code fills itself in), pick a card, then **Start shopping**. Scan real products or tap the quick-add tiles. Add the wine.
-2. On the 5th item the cart flags something unscanned. Tap *I didn't add anything* and it becomes a check item.
+2. Optional: turn on **Account → Demo controls → With smart cart** before starting. On the 5th item the cart then flags something unscanned. Tap *I didn't add anything* and it becomes a check item.
 3. Tap **Done** and pay. You get an amber Exit Pass with a live QR and a 12-digit recall number.
 4. **Laptop or tablet at `/#/pos`:** tap the Magellan bar and hold the phone's QR to the camera, or key the recall number on the keypad and press Enter. The paid basket appears with **BAL DUE $0.00**, and the phone shows "Lane 4 has your basket".
 5. Key `000000221474` (the paper bag barcode on the real lane) and press Enter. The bag is charged to the shopper's card and the phone gets a notification.
 6. Tap the ID check, then **COMPLETE**. The receipt prints on the lane and the phone flips to "6s from Done to out the door".
-7. Try `/#/sco` with a second trip, and a trip with no alcohol for a green "walk out" pass.
+7. Do a trip with no alcohol for a **green** pass, then scan it out at **`/#/exit`** (a phone on a stand by the door works). Also try `/#/sco`.
 
 Account → Demo controls on the phone can force a green pass or a spot-check.
 

@@ -26,10 +26,14 @@ function newTrip() {
   trip = {
     id: uid(), name: 'You', real: true, status: 'shopping', shopperName: profile?.name || 'Guest',
     card: profile?.card || 'Visa ···· 4242', startedAt: Date.now(), items: [], trust: 0.9, sensor: null,
-    zone: 'Entrance', progress: 0.05, adjustments: [],
+    zone: 'Entrance', progress: 0.05, adjustments: [], smartCart: smartCartOn(),
   };
   save();
 }
+
+// Demo setting: is the shopper using a smart cart (Caper/Shopic-style scale + sensors)?
+// Off by default — Exit Pass works phone-only; the cart just lowers how often we spot-check.
+function smartCartOn() { try { return localStorage.getItem('exitpass.smartcart') === '1'; } catch { return false; } }
 
 function endTrip() {
   if (trip && trip.status === 'done' && !history.find((h) => h.id === trip.id)) {
@@ -48,7 +52,7 @@ export function mountShopper(r) {
       trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = msg.by;
       save(); haptic([20, 40, 20]); render();
     }
-    if (msg.type === 'pos.recall' && trip.status === 'pass') { laneBanner = msg.laneName; haptic(15); render(); }
+    if (msg.type === 'pos.recall' && (trip.status === 'pass' || trip.status === 'exit')) { laneBanner = msg.laneName; haptic(15); render(); }
     if (msg.type === 'pos.adjust') {
       const ex = trip.items.find((i) => i.key === msg.item.key);
       if (msg.kind === 'add') ex ? ex.qty++ : trip.items.push({ ...msg.item, qty: 1, addedAtLane: msg.laneName });
@@ -76,6 +80,7 @@ function render() {
   if (!trip) return root.append(home());
   if (trip.status === 'shopping') return root.append(shop());
   if (trip.status === 'pass') return root.append(pass());
+  if (trip.status === 'exit') return root.append(exitPass());
   if (trip.status === 'done') return root.append(done());
 }
 
@@ -93,12 +98,12 @@ function welcomeStep() {
       <div class="welcome-hero">
         <div class="hero-pass"><div class="hp-ring"></div><div class="hp-check">✓</div></div>
         <h1>Checkout happens<br/>while you shop.</h1>
-        <p class="lede">Scan as things go in your cart. When you're done, you're already paid — just walk out with your Exit Pass.</p>
+        <p class="lede">Scan as things go in your cart. When you're done, you're already paid — just scan out at the door with your Exit Pass.</p>
       </div>
       <div class="welcome-steps">
         <div><b>1</b><span>Scan into your cart</span></div>
         <div><b>2</b><span>Tap Done — paid instantly</span></div>
-        <div><b>3</b><span>Walk out. No line.</span></div>
+        <div><b>3</b><span>Scan out at the door. No line.</span></div>
       </div>
       <button class="btn primary xl" id="go">Get started</button>
       <p class="fine">Simulated prototype · No real payment is taken</p>
@@ -226,7 +231,9 @@ function demoControlsHtml() {
   return `<div class="demo-tools">
     <div class="dt-head">Demo controls</div>
     <div class="seg" id="force"><button data-f="">Natural</button><button data-f="green">Force green</button><button data-f="audit">Force spot-check</button></div>
-    <div class="dt-links"><a href="#/pos">Register (Lane 4)</a><a href="#/sco">Self-checkout</a><a href="#/associate">Associate</a><a href="#/store">Store</a><a href="#/demo">Demo view</a></div>
+    <div class="seg" id="cart"><button data-cart="0">Phone only</button><button data-cart="1">With smart cart</button></div>
+    <div class="dt-note">Smart cart applies to the next trip you start.</div>
+    <div class="dt-links"><a href="#/exit">Exit scanner</a><a href="#/pos">Register (Lane 4)</a><a href="#/sco">Self-checkout</a><a href="#/associate">Associate</a><a href="#/store">Store</a><a href="#/demo">Demo view</a></div>
     <div class="dt-sync">Sync: ${bus.live ? `cross-device (${bus.backend})` : 'this device only'}</div>
   </div>`;
 }
@@ -236,6 +243,11 @@ function bindDemoControls(v) {
   v.querySelectorAll('[data-f]').forEach((b) => {
     b.classList.toggle('on', b.dataset.f === cur);
     b.onclick = () => { try { b.dataset.f ? sessionStorage.setItem('exitpass.force', b.dataset.f) : sessionStorage.removeItem('exitpass.force'); } catch {} v.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); };
+  });
+  const cart = smartCartOn() ? '1' : '0';
+  v.querySelectorAll('[data-cart]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.cart === cart);
+    b.onclick = () => { try { localStorage.setItem('exitpass.smartcart', b.dataset.cart); } catch {} v.querySelectorAll('[data-cart]').forEach((x) => x.classList.toggle('on', x === b)); };
   });
   v.querySelectorAll('.dt-links a').forEach((a) => a.onclick = (e) => { e.preventDefault(); location.hash = a.getAttribute('href'); });
 }
@@ -258,7 +270,9 @@ function shop() {
         <div class="tc-status ${trip.sensor?.open ? 'warn' : ''}">
           ${trip.sensor?.open
             ? '<span class="dot amber"></span> Your cart felt something we didn\'t see'
-            : `<span class="dot green"></span> ${n ? 'Cart verified — Exit Pass ready' : 'Smart cart connected'}`}
+            : trip.smartCart
+              ? `<span class="dot green"></span> ${n ? 'Smart cart weight matches your scans' : 'Smart cart connected'}`
+              : `<span class="dot green"></span> ${n ? 'Scanned by you · scan out at the exit' : 'Scan items as they go in your cart'}`}
         </div>
       </section>
       ${trip.sensor?.open ? sensorCard() : ''}
@@ -346,7 +360,7 @@ function addItem(p, fromEl) {
 
   // Demo the cart's weight sensor: occasionally the cart notices an unscanned item.
   const n = count(trip.items);
-  if (!trip.sensorShown && n === 5) { trip.sensor = { open: true, grams: 340 + (hashNum(trip.id) % 300) }; trip.sensorShown = true; haptic([30, 60, 30]); }
+  if (trip.smartCart && !trip.sensorShown && n === 5) { trip.sensor = { open: true, grams: 340 + (hashNum(trip.id) % 300) }; trip.sensorShown = true; haptic([30, 60, 30]); }
 
   save();
   render();
@@ -408,7 +422,7 @@ function finish() {
         <div class="pay-line"><span>VONS #${STORE.number}</span><b>${money(total)}</b></div>
         <div class="pay-line muted"><span>Pay with</span><span>${trip.card}</span></div>
         ${savings(trip.items) > 0 ? `<div class="pay-line muted"><span>Vons for U savings</span><span class="green-t">−${money(savings(trip.items))}</span></div>` : ''}
-        <div class="pay-line muted"><span>Items</span><span>${count(trip.items)} · verified by smart cart</span></div>
+        <div class="pay-line muted"><span>Items</span><span>${count(trip.items)} · ${trip.smartCart ? 'weight-checked by smart cart' : 'scanned by you'}</span></div>
         <button class="btn primary xl" id="confirm">${(trip.card || '').startsWith('Apple') ? 'Pay with Face ID' : 'Pay & get Exit Pass'}</button>
         <div class="pay-progress"><div class="spinner"></div><span>Authorizing…</span></div>
       </div>
@@ -429,8 +443,8 @@ function finish() {
         trip.paidAt = Date.now(); trip.authCode = String(100000 + Math.floor(Math.random() * 899999));
         trip.arrivedAt = Date.now();
         trip.pass = decidePass(trip, { force: forced() });
-        trip.status = trip.pass.tier === 'green' ? 'done' : 'pass';
-        if (trip.status === 'done') trip.doneAt = Date.now() + 9000; // walking to the door
+        // Green: paid, scan out at the door in ~2s. Amber: paid, 1–3 items checked first.
+        trip.status = trip.pass.tier === 'green' ? 'exit' : 'pass';
         trip.zone = 'Front'; trip.progress = 1;
         save();
         revealPass();
@@ -446,7 +460,7 @@ function revealPass() {
   const flash = el(`<div class="reveal ${trip.pass.tier}"></div>`);
   document.body.append(flash);
   setTimeout(() => flash.remove(), 900);
-  if (trip.status === 'done') renderGreenWalkout(); else render();
+  render();
 }
 
 // ---------------- The pass ----------------
@@ -496,32 +510,40 @@ function pass() {
   return v;
 }
 
-function renderGreenWalkout() {
-  clearInterval(tick);
-  root.innerHTML = '';
+function exitPass() {
   const v = el(`
     <main class="screen pass-screen green">
+      ${laneBanner ? `<div class="lane-banner"><div class="spinner light"></div><span>Scanning at <b>${laneBanner}</b>…</span></div>` : ''}
       <div class="pass-card green">
         <div class="pc-top">
           <span class="pc-brand">EXIT PASS</span>
           <span class="pc-live"><span class="dot pulse"></span><span id="clock"></span></span>
         </div>
-        <div class="go-mark"><svg viewBox="0 0 52 52"><path d="M14 27l8 8 17-18"/></svg></div>
-        <div class="pc-title center">You're done.<br/>Walk out.</div>
-        <div class="pc-lane center">No line. No scan. The door knows.</div>
+        <div class="pc-title">Paid. You're good to go.</div>
+        <div class="pc-lane">Scan out at the exit — about 2 seconds, no checks.</div>
+        <div class="pc-code" id="code"></div>
+        <div class="pc-recall">${fmtRecall(recallCode(trip.id))}</div>
         <div class="pc-foot"><span>${count(trip.items)} items · ${money(totals(trip.items).total)} paid</span><span>#${trip.id}</span></div>
       </div>
-      <button class="btn primary xl" id="receipt">I'm out the door</button>
+      <p class="pass-note">Hold this up to the scanner at the door, or show the greeter. Turn your brightness up.</p>
+      <button class="link center" id="demo-out">Demo: simulate scan-out</button>
     </main>`);
   const clock = v.querySelector('#clock');
-  const update = () => { clock.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }); };
+  let lastPayload = '';
+  const update = () => {
+    clock.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const payload = passPayload(trip);
+    if (payload !== lastPayload) { lastPayload = payload; v.querySelector('#code').innerHTML = qrSvg(payload); }
+  };
   update(); tick = setInterval(update, 1000);
-  v.querySelector('#receipt').onclick = () => { trip.doneAt = Math.min(trip.doneAt, Date.now()); trip.exited = true; save(); render(); };
-  root.append(v);
+  v.querySelector('#demo-out').onclick = () => {
+    trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = 'Exit';
+    save(); haptic([20, 40, 20]); render();
+  };
+  return v;
 }
 
 function done() {
-  if (!trip.exited && trip.pass?.tier === 'green') { renderGreenWalkout(); return document.createComment(''); }
   return receiptView(trip, {});
 }
 

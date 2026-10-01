@@ -52,6 +52,15 @@ Every call writes an electronic journal line (visible under *Electronic journal 
 - **QR** `EP1:<tripId>:<token>`. The token rotates every 10 seconds, and the lane accepts the current token plus up to 30 seconds of older ones. A screenshot stops working after about 30 seconds. In production the token would be an HMAC signed by the server with a per-store key, not a client-side hash.
 - **Recall number:** 12 digits, prefix `98` (restricted in-store range), plus a GS1 check digit. A cashier can key it on the existing keypad if 2D scanning is disabled on the Magellan.
 
+## Leaving the store
+
+Every paid shopper scans out at the exit:
+- **Green** pass: the door scanner calls `recall`, finds no checks, and immediately calls `close`. That takes about 2 seconds.
+- **Amber** pass: the greeter sees only the 1–3 flagged items, taps each when checked, and the shopper is released. Or they're sent to Express Check.
+- A pass can be used once. A second scan returns `E_CLOSED`.
+
+The scan-out point can be a phone on a stand, a greeter's handheld, a gate, or later a camera arch like the ones Sam's Club uses. The API is the same either way.
+
 ## Path to a real integration
 
 1. **Scanner:** confirm the Magellan model and firmware have 2D/QR decoding enabled and can read phone screens (common on current Magellan imagers, but it may be off in the store config). Until then, the keyed recall number works on any lane.
@@ -74,4 +83,5 @@ Every call writes an electronic journal line (visible under *Electronic journal 
 | Basket API + store network | `lib/sync.js` (Upstash Redis on Vercel, in memory locally) relaying `trip` and `pos.*` events |
 | TCx SKY screen + extension | `#/pos` (register) and `#/sco` (self-checkout) |
 | Magellan scanner | Device camera (QR + UPC) or keyed entry on the on-screen keypad |
-| Cart weight sensor | Fires on the 5th item of every trip so it can be demoed |
+| Exit scan-out | `#/exit`: a phone or tablet camera at the door, or the greeter's handheld. It uses the same `recall` and `close` calls as the lanes. |
+| Smart cart (optional) | Off by default. When turned on in demo controls, the cart's weight check fires on the 5th item. Real options: Instacart Caper Cart, Shopic, Amazon Dash Cart. |

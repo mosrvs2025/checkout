@@ -140,7 +140,8 @@ export function decidePass(trip, { force } = {}) {
   if (pricey && (trip.trust ?? 0.9) < 0.95) add(pricey, 'High-value spot check', 'value');
 
   // Random audit keeps everyone honest; seeded per-trip so it's stable across devices.
-  const audit = force === 'audit' || (force == null && hashNum(trip.id) % 10 === 0);
+  // With a smart cart weighing every item, ~1 in 10 trips gets one; phone-only, ~1 in 5.
+  const audit = force === 'audit' || (force == null && hashNum(trip.id) % (trip.smartCart ? 10 : 5) === 0);
   if (audit && trip.items.length >= 4) {
     const pool = [...trip.items].sort((a, b) => hashNum(trip.id + a.key) - hashNum(trip.id + b.key));
     for (const i of pool.slice(0, 2)) add(i, 'Random spot check', 'audit');

@@ -8,6 +8,7 @@ const app = document.getElementById('app');
 const PANELS = [
   ['store', 'Store'],
   ['pos', 'Register · Lane 4'],
+  ['exit', 'Exit'],
   ['sco', 'Self-checkout'],
   ['associate', 'Associate'],
 ];
@@ -45,6 +46,7 @@ function route() {
   if (r === 'store') return mountStore(app, { mode: 'store' });
   if (r === 'associate') return mountStore(app, { mode: 'associate' });
   if (r === 'pos') return mountPos(app, { kind: 'register', laneId: arg });
+  if (r === 'exit') return mountPos(app, { kind: 'exit' });
   if (r === 'sco') return mountPos(app, { kind: 'sco', laneId: arg && 'SCO' + arg });
   return mountShopper(app);
 }

@@ -36,7 +36,7 @@ function onMsg(msg) {
     if (!prev && t.status === 'shopping') log(`${t.name === 'You' ? 'A shopper' : t.name} started an Exit Pass trip`, 'info');
     if (prev?.status === 'shopping' && t.status !== 'shopping') {
       const total = money(totals(t.items).total);
-      if (t.pass?.tier === 'green') { log(`Exit Pass ✓ — ${count(t.items)} items, ${total}, walked straight out`, 'good'); stats.passTrips++; }
+      if (t.pass?.tier === 'green') { log(`Exit Pass ✓ — ${count(t.items)} items, ${total} paid · heading to the exit to scan out`, 'good'); stats.passTrips++; }
       else { log(`Exit Pass → ${t.pass.lane}: check ${t.pass.checks.map((c) => c.name).join(', ')}`, 'warn'); haptic(30); chime(); }
     }
     if (prev && !prev.sensor?.open && t.sensor?.open) log(`Cart sensor: unscanned weight in ${t.name === 'You' ? 'a cart' : t.name + "'s cart"} (${t.zone})`, 'warn');
@@ -138,7 +138,7 @@ function simulate() {
 function target(t) {
   if (t.status === 'lane') { const l = LANES.find((x) => x.label === t.lane); const pos = [...trips.values()].filter((o) => o.status === 'lane' && o.lane === t.lane && o.laneDone < t.laneDone).length; return [l.x, 46 - pos * 3.2]; }
   if (t.status === 'pass') return [68 + (hashNum(t.id) % 3) * 1.5, 50];
-  if (t.status === 'leaving' || (t.status === 'done' && !t.sim)) return [93, 56];
+  if (t.status === 'leaving' || t.status === 'exit' || (t.status === 'done' && !t.sim)) return [93, 56];
   if (!t.sim) return zonePos(t.zone);
   if (!t.target || Math.hypot(t.target[0] - t.x, t.target[1] - t.y) < 1.5) {
     const k = Math.floor(Date.now() / 7000) + hashNum(t.id);

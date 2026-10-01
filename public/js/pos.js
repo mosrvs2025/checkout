@@ -12,17 +12,17 @@ const QUICK = ['bananas', 'avocado', 'milk', 'bread', 'eggs', 'coke', 'bag', 'wi
 
 export function mountPos(r, { kind = 'register', laneId } = {}) {
   root = r;
-  lane = kind === 'sco'
-    ? { id: laneId || 'SCO7', name: `Self-checkout ${String(laneId || '7').replace('SCO', '')}`, kind }
+  lane = kind === 'sco' ? { id: laneId || 'SCO7', name: `Self-checkout ${String(laneId || '7').replace('SCO', '')}`, kind }
+    : kind === 'exit' ? { id: 'EXIT1', name: 'Exit', kind }
     : { id: laneId || '4', name: `Lane ${laneId || '4'}`, kind };
-  document.body.className = kind === 'sco' ? 'sco-body' : 'pos-body';
+  document.body.className = kind === 'sco' ? 'sco-body' : kind === 'exit' ? 'exit-body' : 'pos-body';
   state = { mode: 'idle', input: '', msg: null, txn: null, sale: [], journal: [], receipt: null, busy: false };
   bus.on((m) => {
     if (m.type === 'pos.journal' && m.lane === lane.id) { state.journal.unshift({ t: m.at || Date.now(), text: m.text }); state.journal.length = Math.min(state.journal.length, 40); }
     if (m.type === 'trip' || m.type === 'pos.close' || m.type === 'pos.journal') paintArriving();
     if (m.type === 'pos.journal' && m.lane === lane.id) paintJournal();
   });
-  if (kind !== 'sco') window.addEventListener('keydown', onKey);
+  if (kind === 'register') window.addEventListener('keydown', onKey);
   render();
   clearInterval(clockTimer);
   clockTimer = setInterval(() => { const c = root.querySelector('#pclock'); if (c) c.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }, 1000);
@@ -38,6 +38,8 @@ async function doRecall(code) {
     state.txn = await gw.recall(code, lane);
     state.mode = 'exitpass'; state.msg = null;
     haptic([20, 40, 20]); beep();
+    // At the door a green pass needs nothing else: release it immediately.
+    if (lane.kind === 'exit' && !state.txn.checks.length) { state.busy = false; return completeExitPass(); }
   } catch (e) {
     state.msg = { text: e.message, tone: 'err' }; beep(true);
   }
@@ -76,9 +78,9 @@ async function enter() {
 async function completeExitPass() {
   try {
     state.busy = true; flash('Closing transaction…');
-    state.receipt = await gw.close(state.txn, lane.kind === 'sco' ? 'SCO' : 'Maria');
+    state.receipt = await gw.close(state.txn, lane.kind === 'sco' ? 'SCO' : lane.kind === 'exit' ? 'Greeter' : 'Maria');
     state.mode = 'receipt'; state.msg = null; haptic([20, 40, 20]); beep();
-    setTimeout(() => { if (state.mode === 'receipt') reset(); }, lane.kind === 'sco' ? 6000 : 4500);
+    setTimeout(() => { if (state.mode === 'receipt') reset(); }, lane.kind === 'sco' ? 6000 : lane.kind === 'exit' ? 2500 : 4500);
   } catch (e) { state.msg = { text: e.message, tone: 'err' }; }
   state.busy = false; render();
 }
@@ -97,7 +99,7 @@ function reset() { state = { ...state, mode: 'idle', input: '', msg: null, txn: 
 function scan() {
   openScanner({
     qr: true, accept: gw.isPassCode,
-    hint: lane.kind === 'sco' ? 'Hold your Exit Pass up to the camera' : 'Magellan · scan pass or item',
+    hint: lane.kind === 'register' ? 'Magellan · scan pass or item' : 'Hold the Exit Pass up to the camera',
     placeholder: 'Pass code, recall # or UPC',
     onCode: (code) => (gw.isPassCode(code) && state.mode !== 'exitpass' ? doRecall(code) : addByCode(code)),
   });
@@ -132,10 +134,12 @@ function beep(err) {
 }
 
 // ---------------- rendering ----------------
-function render() { lane.kind === 'sco' ? renderSco() : renderRegister(); }
+function render() { lane.kind === 'sco' ? renderSco() : lane.kind === 'exit' ? renderExit() : renderRegister(); }
 
 function arrivingTrips() {
-  return [...bus.trips.values()].filter((t) => t.pass && t.status === 'pass' && t.id !== state.txn?.tripId).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0)).slice(0, 4);
+  // Lanes see shoppers who need a check; the exit sees everyone who's paid (green passes scan out there).
+  const ok = (t) => t.status === 'pass' || (lane.kind === 'exit' && t.status === 'exit');
+  return [...bus.trips.values()].filter((t) => t.pass && ok(t) && t.id !== state.txn?.tripId).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0)).slice(0, 4);
 }
 
 function paintArriving() {
@@ -144,7 +148,7 @@ function paintArriving() {
   const list = arrivingTrips();
   box.innerHTML = list.length ? '' : `<span class="arr-empty">${lane.kind === 'sco' ? 'No Exit Pass shoppers waiting' : 'No Exit Pass shoppers at the front'}</span>`;
   for (const t of list) {
-    const b = el(`<button class="arr"><b>#${t.id}</b><span>${count(t.items)} items · ${money(totals(t.items).total)} · ${t.pass.checks.length} check${t.pass.checks.length === 1 ? '' : 's'}</span></button>`);
+    const b = el(`<button class="arr ${t.status === 'exit' ? 'green' : ''}"><b>#${t.id}</b><span>${count(t.items)} items · ${money(totals(t.items).total)} · ${t.pass.checks.length ? `${t.pass.checks.length} check${t.pass.checks.length === 1 ? '' : 's'}` : 'green · scan out'}</span></button>`);
     b.onclick = () => doRecall(t.id);
     box.append(b);
   }
@@ -298,3 +302,36 @@ function renderSco() {
   paintArriving();
 }
 
+
+// Exit station: a phone/tablet on a stand by the doors, or the greeter's handheld.
+function renderExit() {
+  const s = state;
+  root.innerHTML = '';
+  const ep = s.mode === 'exitpass';
+  const pending = ep ? s.txn.checks.filter((c) => !c.done) : [];
+  const v = el(`
+    <div class="exit">
+      <header class="exit-head"><b>EXIT</b><span>${STORE.name} #${STORE.number}</span><span class="exit-net">${bus.live ? 'Online' : 'This device'}</span></header>
+      ${s.mode === 'idle' ? `
+        <button class="exit-scan" id="scan"><div class="es-ring"></div><b>Scan Exit Pass</b><span>Hold the phone's code to the camera</span></button>
+        <div class="exit-arr"><div class="sp-h">Paid · heading out (tap for demo)</div><div id="arriving"></div></div>` : ''}
+      ${ep && pending.length ? `
+        <div class="exit-card amber">
+          <div class="ec-big">Quick check</div>
+          <div class="ec-sub">#${s.txn.tripId} · ${gw.recompute(s.txn).items} items paid · check only these:</div>
+          ${s.txn.checks.map((c) => `<button class="exit-chk ${c.done ? 'done' : ''}" data-chk="${c.key}"><span>${c.emoji}</span><div><b>${c.name}</b><small>${c.reason}</small></div><i>${c.done ? '✓' : 'Tap when checked'}</i></button>`).join('')}
+          <button class="btn ghost" id="cancel">Send to Express Check instead</button>
+        </div>` : ''}
+      ${ep && !pending.length ? '<div class="exit-card green"><div class="spinner light"></div></div>' : ''}
+      ${s.mode === 'receipt' ? `<div class="exit-card green"><div class="ec-ok">✓</div><div class="ec-big">Have a great day</div><div class="ec-sub">${s.receipt.items} items · ${money(s.receipt.total)} paid · ${s.receipt.seconds}s at the door</div></div>` : ''}
+      ${s.msg && s.mode !== 'exitpass' ? `<div class="exit-msg ${s.msg.tone}">${s.msg.text}</div>` : ''}
+    </div>`);
+  root.append(v);
+  v.querySelector('#scan')?.addEventListener('click', scan);
+  v.querySelector('#cancel')?.addEventListener('click', reset);
+  v.querySelectorAll('[data-chk]').forEach((b) => b.onclick = async () => {
+    await gw.confirmCheck(state.txn, b.dataset.chk); beep();
+    if (state.txn.checks.every((c) => c.done)) completeExitPass(); else render();
+  });
+  paintArriving();
+}

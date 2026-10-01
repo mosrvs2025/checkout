@@ -67,6 +67,7 @@ export async function recall(raw, lane) {
   const trip = parsed.tripId && bus.trips.get(parsed.tripId);
   if (!trip) throw new PosError('E_NOT_FOUND', 'Basket not found. Ask the shopper to refresh their pass.');
   if (trip.status === 'shopping' || !trip.pass) throw new PosError('E_NOT_PAID', 'Shopper hasn\'t tapped Done yet');
+  if (trip.status !== 'pass' && trip.status !== 'exit') throw new PosError('E_CLOSED', 'This pass was already used');
   if (parsed.token && !tokenValid(trip, parsed.token)) throw new PosError('E_TOKEN', 'Pass code expired — ask for a fresh screen (screenshot?)');
   const txn = txnFrom(trip, lane, parsed.method);
   bus.send({ type: 'pos.recall', tripId: trip.id, lane: lane.id, laneName: lane.name, txnId: txn.txnId, method: parsed.method });
