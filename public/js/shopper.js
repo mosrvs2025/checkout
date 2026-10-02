@@ -343,7 +343,7 @@ function shop() {
     aisle.append(b);
   }
 
-  v.querySelector('#scan').onclick = () => openScanner({ onCode: onBarcode });
+  v.querySelector('#scan').onclick = scanItems;
   v.querySelector('#produce').onclick = produceSheet;
   bindList(v);
   v.querySelector('#done').onclick = finish;
@@ -368,7 +368,7 @@ function sensorCard() {
 }
 
 function resolveSensor() {
-  openScanner({ onCode: (code) => { trip.sensor = null; onBarcode(code); } , hint: 'Scan the item you just added' });
+  openScanner({ onCode: (code) => { trip.sensor = null; onBarcode(code); }, hint: 'Scan the item you just added' });
 }
 
 function itemRow(i) {
@@ -533,12 +533,38 @@ function flyToTotal(fromEl, emoji) {
   setTimeout(() => f.remove(), 650);
 }
 
+// Camera stays open: scan item after item, each confirmed with Undo, until "Done".
+function scanItems() {
+  const go = () => openScanner({
+    onCode: onBarcode, continuous: true,
+    summary: () => (trip.items.length ? `Done · ${count(trip.items)} item${count(trip.items) > 1 ? 's' : ''} · ${money(totals(trip.items).total)}` : 'Done'),
+  });
+  if (read('exitpass.camok')) return go();
+  // One-time explainer before the OS camera prompt, so "Allow" is an easy yes.
+  const s = el(`
+    <div class="sheet-wrap">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="cam-ic">▣</div>
+        <h3>Scan with your camera</h3>
+        <p class="muted" style="margin:-6px 0 16px">Point at any barcode — items add themselves. The camera stays open so you can scan one after another. It's only used for barcodes; nothing is recorded.</p>
+        <button class="btn primary xl" id="ok">Continue</button>
+      </div>
+    </div>`);
+  document.body.append(s);
+  requestAnimationFrame(() => s.classList.add('open'));
+  const close = () => { s.classList.remove('open'); setTimeout(() => s.remove(), 300); };
+  s.onclick = (e) => { if (e.target === s) close(); };
+  s.querySelector('#ok').onclick = () => { write('exitpass.camok', true); close(); go(); };
+}
+
 async function onBarcode(code) {
   const hide = byUpc[code] ? () => {} : toast(`Identifying ${code}…`, 8000);
   const res = await itemFromCode(code);
   hide();
-  if (res.item) addItem(res.item);
-  else nameUnknown(code, res.base, res.offline);
+  if (res.item) { addItem(res.item); return; }
+  nameUnknown(code, res.base, res.offline);
+  return 'stop'; // close the camera so the shopper can type a name
 }
 
 function nameUnknown(code, base, offline) {

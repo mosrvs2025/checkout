@@ -55,7 +55,9 @@ export function normalize(raw, format) {
 }
 
 // accept(raw) lets callers take non-product codes (e.g. the register reading an Exit Pass QR).
-export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, accept, placeholder = 'Or type the numbers under the barcode' }) {
+// continuous: keep the camera open after each scan (shopping), with a running summary.
+// onCode may return 'stop' (or a promise of it) to close the scanner, e.g. to ask for input.
+export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, accept, placeholder = 'Or type the numbers under the barcode', continuous = false, summary }) {
   const formats = qr ? [...PRODUCT, 'qr_code'] : PRODUCT;
   const v = el(`
     <div class="scanner">
@@ -67,6 +69,7 @@ export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, a
         <span>${hint}</span>
         <button class="icon-btn dark" id="torch" aria-label="Flashlight" hidden>⚡︎</button>
       </div>
+      ${continuous ? '<button class="scan-done" id="sdone"></button>' : ''}
       <div class="scan-msg" id="msg">Starting camera…</div>
       <form class="scan-manual" id="manual">
         <input inputmode="numeric" pattern="[0-9]*" placeholder="${placeholder}" />
@@ -76,7 +79,20 @@ export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, a
   document.body.append(v);
   const video = v.querySelector('video');
   const msg = v.querySelector('#msg');
-  let stream, stopped = false, last = '', torchOn = false;
+  let stream, stopped = false, last = '', torchOn = false, busy = false;
+  // Continuous mode: a code counts once per *appearance*. Holding a can in view adds it once;
+  // take it away (gone ≥1.2s) and bring the second can in, and that adds again.
+  const seen = new Map(); // code -> { lastSeen, frames, accepted }
+  const sighting = (code) => {
+    const now = Date.now();
+    let a = seen.get(code);
+    if (!a || now - a.lastSeen > 1200) { a = { frames: 0, accepted: false }; seen.set(code, a); }
+    a.lastSeen = now; a.frames++;
+    if (!a.accepted && a.frames >= 2) { a.accepted = true; return true; }
+    return false;
+  };
+  const paintSummary = () => { const b = v.querySelector('#sdone'); if (b) b.textContent = summary?.() || 'Done'; };
+  paintSummary();
 
   const stop = () => {
     stopped = true;
@@ -84,7 +100,14 @@ export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, a
     v.classList.add('out'); setTimeout(() => v.remove(), 200);
   };
   const hit = (code) => {
-    if (stopped) return;
+    if (stopped || busy) return;
+    if (continuous) {
+      busy = true;
+      haptic([15, 30, 15]);
+      v.classList.remove('hit'); void v.offsetWidth; v.classList.add('hit');
+      Promise.resolve(onCode(code)).then((r) => { busy = false; if (r === 'stop') stop(); else paintSummary(); }, () => { busy = false; });
+      return;
+    }
     stopped = true;
     haptic([15, 30, 15]);
     v.classList.add('hit');
@@ -93,12 +116,13 @@ export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, a
   };
 
   v.querySelector('#close').onclick = stop;
+  v.querySelector('#sdone')?.addEventListener('click', stop);
   v.querySelector('#manual').onsubmit = (e) => {
     e.preventDefault();
     const raw = e.target.querySelector('input').value.trim();
     if (accept?.(raw)) return hit(raw.toUpperCase());
     const code = normalize(raw);
-    if (code.length >= 8) hit(code);
+    if (code.length >= 8) { hit(code); e.target.querySelector('input').value = ''; }
   };
 
   (async () => {
@@ -146,7 +170,8 @@ export function openScanner({ onCode, hint = 'Point at a barcode', qr = false, a
           const passHit = accept && codes.find((c) => accept(c.rawValue));
           if (passHit) return hit(passHit.rawValue);
           const good = codes.map((c) => normalize(c.rawValue, c.format)).find(validGtin);
-          if (good && good === last) return hit(good);
+          if (continuous) { if (good && sighting(good)) hit(good); }
+          else if (good && good === last) return hit(good);
           last = good || '';
         } catch {}
       }

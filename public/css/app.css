@@ -559,3 +559,8 @@ body { min-height: 100vh; }
 }
 .dock .done { white-space: nowrap; }
 @media (max-width: 380px) { .dock .scan .lbl { display: none; } .dock .scan { width: 58px; padding: 0; flex: none; } }
+.scan-done { position: absolute; left: 16px; right: 16px; bottom: calc(var(--safe-b) + 76px); height: 56px; border-radius: 16px; background: #fff; color: #000; font-weight: 700; font-size: 17px; z-index: 2; }
+.scanner.hit .scan-frame { animation: pop .3s; }
+.snack { z-index: 50; }
+.scanner ~ .snack { bottom: calc(var(--safe-b) + 144px); }
+.cam-ic { font-size: 48px; text-align: center; margin-top: 6px; }

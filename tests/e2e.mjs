@@ -29,7 +29,7 @@ const watch = (p, n) => p.on('pageerror', (e) => errs.push(`${n}: ${e.message}`)
 async function phone(browser, name = 'phone') {
   const p = await (await browser.newContext({ ...PHONE })).newPage(); watch(p, name);
   await p.goto(U);
-  await p.evaluate(() => localStorage.setItem('exitpass.profile', JSON.stringify({ name: 'Test', card: 'Visa ···· 4242', member: true, phone: '(626) 555-0142' })));
+  await p.evaluate(() => { localStorage.setItem('exitpass.profile', JSON.stringify({ name: 'Test', card: 'Visa ···· 4242', member: true, phone: '(626) 555-0142' })); localStorage.setItem('exitpass.camok', 'true'); });
   await p.reload();
   return p;
 }
@@ -42,7 +42,7 @@ async function pay(p, force) {
 }
 
 // A fake camera: EAN-13 barcode frames in YUV4MPEG for Chromium's fake capture device.
-function ean13y4m(code, file) {
+function ean13y4m(code, file, pattern = Array(20).fill(true)) {
   const L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
   const G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
   const R = ['1110010', '1100110', '1101100', '1000010', '1011100', '1001110', '1010000', '1000100', '1001000', '1110100'];
@@ -58,7 +58,8 @@ function ean13y4m(code, file) {
   const Y = Buffer.concat(Array.from({ length: H }, (_, y) => (y > 160 && y < 320 ? row : Buffer.alloc(W, 235))));
   const UV = Buffer.alloc((W * H) / 4, 128);
   const frame = Buffer.concat([Buffer.from('FRAME\n'), Y, UV, UV]);
-  writeFileSync(file, Buffer.concat([Buffer.from(`YUV4MPEG2 W${W} H${H} F30:1 Ip A1:1 C420jpeg\n`), ...Array(20).fill(frame)]));
+  const blank = Buffer.concat([Buffer.from('FRAME\n'), Buffer.alloc(W * H, 235), UV, UV]);
+  writeFileSync(file, Buffer.concat([Buffer.from(`YUV4MPEG2 W${W} H${H} F30:1 Ip A1:1 C420jpeg\n`), ...pattern.map((on) => (on ? frame : blank))]));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -206,8 +207,26 @@ console.log('\nCamera scanning (fake camera feeds)');
     const p = await (await b.newContext({ ...PHONE, permissions: ['camera'] })).newPage(); watch(p, 'cam');
     await p.goto(U); await p.evaluate(() => localStorage.setItem('exitpass.profile', JSON.stringify({ name: 'T', card: 'Visa ···· 4242' }))); await p.reload();
     await p.click('#go'); await p.click('#scan');
+    await p.click('#ok'); // one-time camera explainer
     await p.waitForSelector('.item', { timeout: 15000 });
     assert((await p.textContent('.list')).includes('Coca-Cola'), 'wrong product');
+    // Continuous mode: camera stays open, same code isn't double-added, summary shows the total
+    assert(await p.locator('.scanner').count(), 'scanner closed after one scan');
+    await p.waitForTimeout(4000); // same can held in view for 4s must still count once
+    assert((await p.locator('.item').count()) === 1 && (await p.textContent('.qty span')) === '1', 'double-added');
+    assert((await p.textContent('#sdone')).includes('1 item'), await p.textContent('#sdone'));
+    await p.click('#sdone'); await p.waitForTimeout(300);
+    assert(!(await p.locator('.scanner').count()), 'Done did not close the scanner');
+    await b.close();
+  });
+  await step('second can (barcode leaves view, comes back) adds again', async () => {
+    const f = join(TMP, 'coke2.y4m');
+    ean13y4m('0049000028911', f, [...Array(30).fill(true), ...Array(75).fill(false)]); // 1s in view, 2.5s away, loops
+    const b = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${f}`] });
+    const p = await (await b.newContext({ ...PHONE, permissions: ['camera'] })).newPage(); watch(p, 'cam2');
+    await p.goto(U); await p.evaluate(() => { localStorage.setItem('exitpass.profile', JSON.stringify({ name: 'T', card: 'Visa ···· 4242' })); localStorage.setItem('exitpass.camok', 'true'); }); await p.reload();
+    await p.click('#go'); await p.click('#scan');
+    await p.waitForFunction(() => +document.querySelector('.qty span')?.textContent >= 2, null, { timeout: 15000 });
     await b.close();
   });
   await step('register reads the Exit Pass QR off the phone', async () => {
