@@ -540,3 +540,11 @@ body { min-height: 100vh; }
 .lb-item small { margin-left: auto; color: var(--mute); font-size: 12px; }
 .tile-deal { font-size: 10px; font-weight: 700; color: #c8102e; }
 .pl[data-line] { cursor: pointer; } .pl[data-line]:hover { background: #fff3f1; }
+@media (max-height: 700px) {
+  .welcome { gap: 12px; }
+  .welcome-hero { padding-top: 0; }
+  .hero-pass { width: 84px; height: 84px; } .hp-ring { border-radius: 26px; } .hp-ring::after { border-radius: 23px; } .hp-check { font-size: 40px; }
+  .welcome h1 { font-size: 30px; margin: 14px 0 8px; } .lede { font-size: 15px; }
+  .welcome-steps { gap: 6px; } .welcome-steps div { font-size: 15px; }
+  .pc-title { font-size: 24px; margin: 10px 0 4px; } .pc-code { width: 128px; height: 128px; margin: 10px auto; }
+}

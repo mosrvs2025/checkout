@@ -100,9 +100,17 @@ async function keepAwake(on) {
 function render() {
   clearInterval(tick);
   queueMicrotask(() => keepAwake(!!root.querySelector('.pass-screen')));
+  // Keep scroll position only when re-rendering the same screen (e.g. adding items);
+  // a new screen (pass, receipt, home) always starts at the top.
+  const before = root.firstElementChild?.className || '';
   const aisleX = root.querySelector('#aisle')?.scrollLeft || 0, y = scrollY;
   root.innerHTML = '';
-  requestAnimationFrame(() => { const a = root.querySelector('#aisle'); if (a) { a.scrollLeft = aisleX; scrollTo(0, y); } });
+  requestAnimationFrame(() => {
+    const same = (root.firstElementChild?.className || '') === before;
+    const a = root.querySelector('#aisle');
+    if (a) a.scrollLeft = same ? aisleX : 0;
+    scrollTo(0, same ? y : 0);
+  });
   if (!profile) return root.append(onboarding());
   if (viewing) return root.append(receiptView(viewing, { fromHistory: true }));
   if (!trip) return root.append(home());
