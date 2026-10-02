@@ -548,3 +548,14 @@ body { min-height: 100vh; }
   .welcome-steps { gap: 6px; } .welcome-steps div { font-size: 15px; }
   .pc-title { font-size: 24px; margin: 10px 0 4px; } .pc-code { width: 128px; height: 128px; margin: 10px auto; }
 }
+@media (max-width: 380px) {
+  .dock { gap: 8px; } .dock .scan { padding: 0 14px; font-size: 16px; } .dock .done { font-size: 16px; padding: 0 10px; }
+  .item-price { width: 56px; font-size: 14px; } .item { gap: 10px; }
+}
+@media (max-width: 600px) {
+  .ops-head { flex-direction: column; align-items: flex-start; }
+  .ops-link { display: none; }
+  .ops-meta { font-size: 12px; }
+}
+.dock .done { white-space: nowrap; }
+@media (max-width: 380px) { .dock .scan .lbl { display: none; } .dock .scan { width: 58px; padding: 0; flex: none; } }

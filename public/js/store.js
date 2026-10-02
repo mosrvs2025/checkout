@@ -187,7 +187,7 @@ const $ = (s) => root.querySelector(s);
 
 function paint() {
   $('#clock').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-  if ($('#relay')) $('#relay').textContent = bus.live ? `Synced across devices (${bus.backend}) · ` : 'This device only · ';
+  if ($('#relay')) $('#relay').textContent = bus.live ? `Synced (${bus.backend}) · ` : 'This device only · ';
   for (const t of trips.values()) {
     if (t.x == null) { [t.x, t.y] = zonePos('Entrance'); }
     const [tx, ty] = target(t);
@@ -231,7 +231,7 @@ function paintMap() {
   const dots = all().map((t) => {
     const cls = !t.sim ? 'you' : t.usesPass ? 'pass' : 'lane';
     const flag = t.status === 'pass' ? 'checking' : t.sensor?.open ? 'checking' : '';
-    return `<g transform="translate(${t.x.toFixed(2)} ${t.y.toFixed(2)})" class="dot-g ${cls} ${flag}">${!t.sim ? '<circle r="3.2" class="you-ring"/>' : ''}<circle r="${!t.sim ? 1.6 : 1.1}"/>${!t.sim ? `<text y="-3.6" text-anchor="middle" class="you-l">${money(totals(t.items).total)}</text>` : ''}</g>`;
+    return `<g transform="translate(${t.x.toFixed(2)} ${t.y.toFixed(2)})" class="dot-g ${cls} ${flag}">${!t.sim ? '<circle r="3.2" class="you-ring"/>' : ''}<circle r="${!t.sim ? 1.6 : 1.1}"/>${!t.sim && t.status === 'shopping' ? `<text y="-3.6" text-anchor="middle" class="you-l">${money(totals(t.items).total)}</text>` : ''}</g>`;
   }).join('');
   $('#map').innerHTML = `
     <rect class="floor" x="1" y="1" width="98" height="58" rx="2"/>

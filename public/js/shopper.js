@@ -327,7 +327,7 @@ function shop() {
       </section>
       <footer class="dock">
         ${navigator.onLine ? '' : '<div class="offline-pill">No signal · keep scanning, pay when you\'re back online</div>'}
-        <button class="btn scan" id="scan" aria-label="Scan a barcode"><span class="scan-ic"></span> Scan</button>
+        <button class="btn scan" id="scan" aria-label="Scan a barcode"><span class="scan-ic"></span><span class="lbl"> Scan</span></button>
         <button class="btn nobar" id="produce" aria-label="Add produce or items without a barcode">🥕</button>
         <button class="btn primary done" id="done" ${n && navigator.onLine ? '' : 'disabled'}>Done · ${money(total)}</button>
       </footer>

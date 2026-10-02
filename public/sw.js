@@ -1,6 +1,6 @@
 // Network-first app shell: always fresh when online, still opens with no signal
 // (store back corners and freezer aisles are notorious dead zones).
-const CACHE = 'exitpass-v7';
+const CACHE = 'exitpass-v8';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'icon.svg', 'icon-180.png', 'icon-192.png', 'manifest.webmanifest',
   'js/main.js', 'js/shared.js', 'js/shopper.js', 'js/scanner.js', 'js/products.js',
