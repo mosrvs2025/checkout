@@ -681,7 +681,7 @@ function pass() {
         <div class="pc-code" id="code"></div>
         <div class="pc-recall">${fmtRecall(recallCode(trip.id))}</div>
         <div class="pc-checks">
-          <div class="pcc-head">They'll check ${p.checks.length === 1 ? 'just this' : `only these ${p.checks.length}`}</div>
+          <div class="pcc-head">They'll check ${p.checks.length === 1 ? 'just this' : `only these ${p.checks.length}`} <button class="why" id="why" aria-label="Why these checks">Why?</button></div>
           ${p.checks.map((c) => `<div class="pcc"><span class="pcc-e">${c.emoji}</span><span class="pcc-n">${c.name}</span><span class="pcc-r">${c.reason}</span></div>`).join('')}
         </div>
         <div class="pc-foot"><span>${count(trip.items)} items · ${money(total)} paid</span><span>#${trip.id}</span></div>
@@ -697,6 +697,24 @@ function pass() {
     if (payload !== lastPayload) { lastPayload = payload; v.querySelector('#code').innerHTML = qrSvg(payload); }
   };
   update(); tick = setInterval(update, 1000);
+  v.querySelector('#why').onclick = () => {
+    const kinds = new Set(p.checks.map((c) => c.kind));
+    const s = el(`
+      <div class="sheet-wrap"><div class="sheet">
+        <div class="grab"></div>
+        <h3>Why a quick check?</h3>
+        ${kinds.has('id') ? '<p><b>🪪 ID</b> — store policy: every alcohol and tobacco purchase gets an ID check, same as at any register.</p>' : ''}
+        ${kinds.has('value') ? '<p><b>⭐ High-value item</b> — expensive items get a glance until you\'re a trusted shopper.</p>' : ''}
+        ${kinds.has('sensor') ? '<p><b>⚖️ Cart weight</b> — the smart cart felt something that wasn\'t scanned. Usually a reusable bag.</p>' : ''}
+        ${kinds.has('audit') ? '<p><b>🎲 Random check</b> — a few trips are picked at random. It keeps Exit Pass fast for everyone, and it\'s never about you.</p>' : ''}
+        <p class="muted">Nothing is re-scanned — they only look at these items. Clean trips make you a trusted shopper with fewer checks.</p>
+        <button class="btn primary xl" id="okw">Got it</button>
+      </div></div>`);
+    document.body.append(s);
+    requestAnimationFrame(() => s.classList.add('open'));
+    const close = () => { s.classList.remove('open'); setTimeout(() => s.remove(), 300); };
+    s.onclick = (e) => { if (e.target === s || e.target.id === 'okw') close(); };
+  };
   v.querySelector('#demo-verify').onclick = () => {
     trip.status = 'done'; trip.doneAt = Date.now(); trip.verifiedBy = 'Maria (handheld)';
     save(); haptic([20, 40, 20]); render();

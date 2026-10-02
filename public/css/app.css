@@ -564,3 +564,4 @@ body { min-height: 100vh; }
 .snack { z-index: 50; }
 .scanner ~ .snack { bottom: calc(var(--safe-b) + 144px); }
 .cam-ic { font-size: 48px; text-align: center; margin-top: 6px; }
+.why { float: right; font-size: 11px; font-weight: 700; color: var(--amber-d); background: var(--amber-bg); padding: 2px 8px; border-radius: 99px; letter-spacing: 0; text-transform: none; } .sheet p { line-height: 1.45; font-size: 15px; }

@@ -72,7 +72,12 @@ export async function recall(raw, lane) {
   if (!parsed) throw new PosError('E_FORMAT', 'Not an Exit Pass code');
   const trip = parsed.tripId && bus.trips.get(parsed.tripId);
   if (!trip && closedAt.has(parsed.tripId)) throw new PosError('E_CLOSED', `Pass already used at ${closedAt.get(parsed.tripId)}`);
-  if (!trip) throw new PosError('E_NOT_FOUND', 'Basket not found. Ask the shopper to refresh their pass.');
+  if (!trip) {
+    // On Vercel without Upstash, each serverless instance has its own memory: devices don't see each other.
+    const hint = bus.backend === 'memory' && !/^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname)
+      ? ' Devices may not be sharing sync — add Upstash Redis in Vercel → Storage, or key the pass on the same device.' : '';
+    throw new PosError('E_NOT_FOUND', 'Basket not found. Ask the shopper to refresh their pass.' + hint);
+  }
   if (trip.status === 'shopping' || !trip.pass) throw new PosError('E_NOT_PAID', 'Shopper hasn\'t tapped Done yet');
   if (trip.status !== 'pass' && trip.status !== 'exit') throw new PosError('E_CLOSED', 'This pass was already used');
   if (parsed.token && !tokenValid(trip, parsed.token)) throw new PosError('E_TOKEN', 'Pass code expired — ask for a fresh screen (screenshot?)');
