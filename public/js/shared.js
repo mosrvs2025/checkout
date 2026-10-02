@@ -54,12 +54,29 @@ function track(msg) {
   if (msg.type === 'trip' && msg.trip?.id) msg.trip.status === 'done' ? trips.delete(msg.trip.id) : trips.set(msg.trip.id, msg.trip);
   if (msg.type === 'reset') trips.clear();
 }
+// Everything from another device is untrusted: it gets rendered into screens with innerHTML.
+// Entity-encode markup characters in every string. Idempotent (existing entities are kept),
+// so a name that hops phone → register → phone never double-encodes.
+const KNOWN = new Set(['trip', 'verify', 'help', 'help-ack', 'reset', 'pos.recall', 'pos.adjust', 'pos.close', 'pos.sale', 'pos.journal']);
+export const esc = (v) => String(v).replace(/&(?!(amp|lt|gt|quot|#39);)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+function clean(v, depth = 0) {
+  if (depth > 6) return null;
+  if (typeof v === 'string') return esc(v.slice(0, 500));
+  if (Array.isArray(v)) return v.slice(0, 200).map((x) => clean(x, depth + 1));
+  if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v).slice(0, 60)) o[k] = clean(v[k], depth + 1); return o; }
+  return typeof v === 'number' || typeof v === 'boolean' || v == null ? v : null;
+}
+function receive(raw) {
+  if (!raw || typeof raw !== 'object' || !KNOWN.has(raw.type)) return;
+  deliver(clean(raw));
+}
+
 function deliver(msg) {
   if (msg._id) { if (seen.has(msg._id)) return; seen.add(msg._id); if (seen.size > 2000) seen.clear(); }
   track(msg);
   listeners.forEach((fn) => { try { fn(msg); } catch (e) { console.error(e); } });
 }
-bc?.addEventListener('message', (e) => deliver(e.data));
+bc?.addEventListener('message', (e) => receive(e.data));
 
 export const bus = {
   on(fn) {
@@ -87,7 +104,7 @@ export async function connectRelay() {
     if (!r.ok || !r.headers.get('content-type')?.includes('json')) return false;
     const d = await r.json();
     sync = { up: true, backend: d.backend || 'memory', seq: d.seq };
-    (d.trips || []).forEach((trip) => track({ type: 'trip', trip }));
+    (d.trips || []).forEach((trip) => { const m = clean({ type: 'trip', trip }); track(m); });
     poll();
     return true;
   } catch { return false; }
@@ -100,9 +117,9 @@ async function poll() {
       const r = await fetch(`api/sync?since=${sync.seq}`, { cache: 'no-store' });
       if (!r.ok) continue;
       const d = await r.json();
-      if (d.reset) (d.trips || []).forEach((trip) => deliver({ type: 'trip', trip }));
+      if (d.reset) (d.trips || []).forEach((trip) => receive({ type: 'trip', trip }));
       sync.seq = d.seq;
-      (d.msgs || []).forEach(deliver);
+      (d.msgs || []).forEach(receive);
     } catch {}
   }
 }

@@ -331,7 +331,7 @@ function resolveSensor() {
 function itemRow(i) {
   const row = el(`
     <div class="item" data-key="${i.key}">
-      <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.image ? `<img src="${i.image}" alt="" loading="lazy" onerror="this.replaceWith('${i.emoji}')">` : i.emoji}</div>
+      <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.image ? `<img src="${i.image}" alt="" loading="lazy">` : i.emoji}</div>
       <div class="item-body">
         <div class="item-name">${i.name}${i.age ? ' <span class="tag">21+</span>' : ''}</div>
         <div class="item-detail">${i.reg ? `<span class="club">Vons for U</span> ` : ''}${i.detail || ''}</div>
@@ -341,6 +341,7 @@ function itemRow(i) {
       </div>
       <div class="item-price">${money(i.price * i.qty)}</div>
     </div>`);
+  row.querySelector('img')?.addEventListener('error', (e) => e.target.replaceWith(i.emoji || '🏷️'));
   row.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => {
     i.qty += +b.dataset.d;
     if (i.qty <= 0) trip.items = trip.items.filter((x) => x !== i);

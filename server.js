@@ -14,9 +14,12 @@ const TYPES = {
   '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
   '.png': 'image/png', '.wasm': 'application/wasm',
 };
+// Same security headers Vercel sends (see vercel.json), so local testing matches production.
+const SECURITY = {"Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https://world.openfoodfacts.org; media-src 'self' blob: mediastream:; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "Permissions-Policy": "camera=(self), microphone=(), geolocation=(), payment=()", "X-Frame-Options": "SAMEORIGIN"};
 const API = { '/api/sync': sync, '/api/lookup': lookup };
 
 const server = http.createServer((req, res) => {
+  for (const [k, v] of Object.entries(SECURITY)) res.setHeader(k, v);
   const url = new URL(req.url, 'http://x');
   const api = API[url.pathname];
   if (api) { Promise.resolve(api(req, res)).catch(() => { if (!res.headersSent) res.writeHead(500); res.end(); }); return; }

@@ -2,6 +2,8 @@
 // Runs as a Vercel serverless function, and is also mounted by server.js for local dev.
 // Queries several open product databases in parallel and returns the best match.
 
+const { rateLimited } = require('../lib/sync.js');
+
 const UA = 'ExitPass/0.1 (grocery checkout prototype)';
 const TIMEOUT = 4000;
 
@@ -59,6 +61,7 @@ async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   const code = (url.searchParams.get('code') || '').replace(/\D/g, '');
   res.setHeader('Content-Type', 'application/json');
+  if (rateLimited(req, 60, 'lookup')) { res.statusCode = 429; return res.end(JSON.stringify({ error: 'slow down' })); }
   if (code.length < 8 || code.length > 14) { res.statusCode = 400; return res.end(JSON.stringify({ error: 'bad code' })); }
   const out = await lookup(code);
   res.setHeader('Cache-Control', out.found ? 'public, s-maxage=604800, max-age=86400' : 'public, s-maxage=3600');

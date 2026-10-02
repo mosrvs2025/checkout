@@ -165,7 +165,7 @@ function linesHtml(lines, txn) {
     const chk = txn?.checks?.find((c) => c.key === l.key);
     const added = txn?.adjustments?.some((a) => a.kind === 'add' && a.item.key === l.key);
     return `<div class="pl ${chk ? (chk.done ? 'chk done' : 'chk') : ''} ${added ? 'added' : ''}">
-      <span class="pl-q">${l.qty}</span><span class="pl-d">${l.name.toUpperCase()}${chk ? ` <em>${chk.done ? '✓ ' : '◆ '}${chk.reason.toUpperCase()}</em>` : ''}${added ? ' <em class="add">ADDED AT LANE</em>' : ''}</span>
+      <span class="pl-q">${l.qty}</span><span class="pl-d">${l.name}${chk ? ` <em>${chk.done ? '✓ ' : '◆ '}${chk.reason.toUpperCase()}</em>` : ''}${added ? ' <em class="add">ADDED AT LANE</em>' : ''}</span>
       <span class="pl-p">${money(l.price * l.qty)}</span>${l.reg ? `<span class="pl-s">MEMBER SAVINGS -${money((l.reg - l.price) * l.qty)}</span>` : ''}</div>`;
   }).join('');
 }
