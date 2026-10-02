@@ -503,3 +503,23 @@ body { min-height: 100vh; }
 .exit-msg { text-align: center; padding: 12px; border-radius: 12px; background: #1d2027; } .exit-msg.err { background: #4a1d1a; color: #ffb4ab; }
 .arr.green { border-color: #9fd8b6; }
 .pl-d { text-transform: uppercase; }
+
+/* ================= v3: ease of use ================= */
+.dock .nobar { height: 58px; width: 58px; padding: 0; border-radius: 18px; background: var(--soft); font-size: 24px; flex: none; }
+.offline-pill { position: absolute; left: 16px; right: 16px; top: -26px; text-align: center; font-size: 12px; font-weight: 600; color: #7a4a00; background: var(--amber-bg); border-radius: 10px; padding: 5px; }
+.snack { position: fixed; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 88px); max-width: 456px; margin: 0 auto; display: flex; align-items: center; gap: 10px; background: var(--ink); color: #fff; border-radius: 16px; padding: 8px 8px 8px 10px; z-index: 30; transform: translateY(16px); opacity: 0; transition: .25s; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.snack.in { transform: none; opacity: 1; }
+.sn-art { width: 36px; height: 36px; border-radius: 10px; background: #fff; display: grid; place-items: center; font-size: 22px; overflow: hidden; flex: none; }
+.sn-art img { width: 100%; height: 100%; object-fit: contain; }
+.sn-t { flex: 1; display: grid; min-width: 0; } .sn-t b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .sn-t small { color: rgba(255,255,255,.65); }
+.sn-undo { color: #2bd97c; font-weight: 700; padding: 10px 12px; }
+.sheet.tall { max-height: 86dvh; overflow: auto; }
+.prod-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+.prod { background: var(--tint); border-radius: 16px; padding: 12px; text-align: left; display: grid; gap: 2px; }
+.prod span { font-size: 28px; } .prod b { font-size: 14px; } .prod small { color: var(--ink2); font-size: 12px; }
+.wt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wt-grid button { background: var(--soft); border-radius: 14px; padding: 14px 6px; display: grid; gap: 2px; }
+.wt-grid b { font-size: 17px; } .wt-grid small { color: var(--mute); }
+.receipt .btn.ghost { width: 100%; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+:focus-visible { outline: 3px solid #0a84ff; outline-offset: 2px; }

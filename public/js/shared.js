@@ -5,7 +5,7 @@ export const STORE = { name: 'Vons', number: '2118', city: 'Pasadena' };
 // Real UPCs where we know them, so scanning the actual product in-store hits the catalog.
 // Anything else that's scanned is looked up on Open Food Facts and priced deterministically.
 export const CATALOG = [
-  { key: 'bananas', plu: '4011', name: 'Organic Bananas', detail: '2.1 lb · $0.79/lb', price: 1.66, emoji: '🍌', tint: '#FFF3C4', aisle: 'Produce' },
+  { key: 'bananas', plu: '4011', produce: true, perLb: 0.79, name: 'Organic Bananas', detail: '2.1 lb · $0.79/lb', price: 1.66, emoji: '🍌', tint: '#FFF3C4', aisle: 'Produce' },
   { key: 'avocado', plu: '4225', reg: 6.99, name: 'Hass Avocados', detail: 'Bag of 4', price: 5.99, emoji: '🥑', tint: '#E3F2D5', aisle: 'Produce' },
   { key: 'strawberries', reg: 5.99, name: 'Strawberries', detail: '1 lb clamshell', price: 4.49, emoji: '🍓', tint: '#FDE0E0', aisle: 'Produce' },
   { key: 'milk', upc: '041303001110', name: 'Lucerne 2% Milk', detail: '1 gallon', price: 4.79, emoji: '🥛', tint: '#E8F0FB', aisle: 'Dairy' },
@@ -20,6 +20,14 @@ export const CATALOG = [
   { key: 'beer', name: 'Modelo Especial', detail: '12 pack bottles', price: 19.99, emoji: '🍺', tint: '#FFF1CC', aisle: 'Beer', age: 21 },
   { key: 'icecream', reg: 6.99, name: "Ben & Jerry's", detail: 'Half Baked, pint', price: 5.99, emoji: '🍨', tint: '#F1E8FA', aisle: 'Frozen' },
   { key: 'chips', reg: 5.49, name: 'Kettle Chips', detail: 'Sea salt, 8 oz', price: 4.29, emoji: '🥔', tint: '#FDF0D0', aisle: 'Aisle 10' },
+  // Loose produce: no barcode. Shoppers add these by name or the PLU sticker number.
+  { key: 'apples', plu: '3283', name: 'Honeycrisp Apples', perLb: 2.99, price: 2.99, emoji: '🍎', tint: '#FDE3E1', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'tomatoes', plu: '4087', name: 'Roma Tomatoes', perLb: 1.49, price: 1.49, emoji: '🍅', tint: '#FDE3E1', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'onions', plu: '4093', name: 'Yellow Onions', perLb: 1.29, price: 1.29, emoji: '🧅', tint: '#F6EBDD', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'potatoes', plu: '4072', name: 'Russet Potatoes', perLb: 0.99, price: 0.99, emoji: '🥔', tint: '#F1E6D6', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'limes', plu: '4048', name: 'Limes', each: true, price: 0.33, emoji: '🍋‍🟩', tint: '#E3F2D5', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'lemons', plu: '4053', name: 'Lemons', each: true, price: 0.69, emoji: '🍋', tint: '#FFF6C9', aisle: 'Produce', produce: true, hidden: true },
+  { key: 'peppers', plu: '4065', name: 'Green Bell Peppers', each: true, price: 0.99, emoji: '🫑', tint: '#E3F2D5', aisle: 'Produce', produce: true, hidden: true },
   { key: 'bag', upc: '000000221474', name: 'Paper Bag Charge', detail: 'Required by CA law', price: 0.10, emoji: '🛍️', tint: '#F1EDE4', aisle: 'Front', hidden: true },
   { key: 'flowers', name: 'Sunflower Bouquet', detail: 'Floral', price: 12.99, emoji: '🌻', tint: '#FFF2C2', aisle: 'Floral' },
 ];

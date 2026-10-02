@@ -46,6 +46,10 @@ function endTrip() {
 export function mountShopper(r) {
   root = r;
   document.body.className = 'shopper-body';
+  // Dead zones are common in stores: keep scanning offline, re-sync the moment signal returns.
+  addEventListener('online', () => { if (trip) save(); toast('Back online'); render(); });
+  addEventListener('offline', () => render());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(!!root.querySelector('.pass-screen')); });
   bus.on((msg) => {
     if (!trip || msg.tripId !== trip.id) { if (msg.type === 'reset' && trip) { trip = null; write(KEY, null); render(); } return; }
     if (msg.type === 'verify' && trip.status === 'pass') {
@@ -70,8 +74,18 @@ export function mountShopper(r) {
   render();
 }
 
+// Keep the screen on while a pass is showing — nobody wants to unlock their phone at the door.
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && 'wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+
 function render() {
   clearInterval(tick);
+  queueMicrotask(() => keepAwake(!!root.querySelector('.pass-screen')));
   const aisleX = root.querySelector('#aisle')?.scrollLeft || 0, y = scrollY;
   root.innerHTML = '';
   requestAnimationFrame(() => { const a = root.querySelector('#aisle'); if (a) { a.scrollLeft = aisleX; scrollTo(0, y); } });
@@ -264,7 +278,7 @@ function shop() {
       </header>
       <section class="total-card">
         <div class="tc-label">Your cart</div>
-        <div class="tc-total" id="total">${money(total)}</div>
+        <div class="tc-total" id="total" aria-live="polite">${money(total)}</div>
         <div class="tc-sub">${n ? `${n} item${n > 1 ? 's' : ''} · tax included · ready to pay` : 'Scan your first item to begin'}</div>
         ${savings(trip.items) > 0 ? `<div class="tc-save">Vons for U savings <b>−${money(savings(trip.items))}</b></div>` : ''}
         <div class="tc-status ${trip.sensor?.open ? 'warn' : ''}">
@@ -279,7 +293,7 @@ function shop() {
       <section class="list" id="list">
         ${trip.items.length ? '' : `<div class="empty">
           <div class="empty-art">🛒</div>
-          <p>Tap <b>Scan</b> and point at any barcode.<br/>Or tap a product below to simulate it.</p>
+          <p>Tap <b>Scan</b> and point at any barcode.<br/>Loose produce? Tap <b>🥕</b>. Or tap a product below to simulate a scan.</p>
         </div>`}
       </section>
       <section class="aisle">
@@ -287,8 +301,10 @@ function shop() {
         <div class="aisle-row" id="aisle"></div>
       </section>
       <footer class="dock">
-        <button class="btn scan" id="scan"><span class="scan-ic"></span> Scan</button>
-        <button class="btn primary done" id="done" ${n ? '' : 'disabled'}>Done · ${money(total)}</button>
+        ${navigator.onLine ? '' : '<div class="offline-pill">No signal · keep scanning, pay when you\'re back online</div>'}
+        <button class="btn scan" id="scan" aria-label="Scan a barcode"><span class="scan-ic"></span> Scan</button>
+        <button class="btn nobar" id="produce" aria-label="Add produce or items without a barcode">🥕</button>
+        <button class="btn primary done" id="done" ${n && navigator.onLine ? '' : 'disabled'}>Done · ${money(total)}</button>
       </footer>
     </main>`);
 
@@ -303,6 +319,7 @@ function shop() {
   }
 
   v.querySelector('#scan').onclick = () => openScanner({ onCode: onBarcode });
+  v.querySelector('#produce').onclick = produceSheet;
   v.querySelector('#done').onclick = finish;
   v.querySelector('#help').onclick = helpSheet;
   v.querySelector('#resolve')?.addEventListener('click', () => resolveSensor(v));
@@ -343,8 +360,12 @@ function itemRow(i) {
     </div>`);
   row.querySelector('img')?.addEventListener('error', (e) => e.target.replaceWith(i.emoji || '🏷️'));
   row.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => {
+    const before = trip.items.map((x) => ({ ...x }));
     i.qty += +b.dataset.d;
-    if (i.qty <= 0) trip.items = trip.items.filter((x) => x !== i);
+    if (i.qty <= 0) {
+      trip.items = trip.items.filter((x) => x !== i);
+      snack(i, 'Removed', () => { trip.items = before; save(); render(); });
+    }
     haptic(8); save(); render();
   });
   return row;
@@ -368,6 +389,70 @@ function addItem(p, fromEl) {
   const row = root.querySelector(`.item[data-key="${p.key}"]`);
   row?.classList.add('just-added');
   bumpTotal();
+  snack(p, money(p.price), () => {
+    const it = trip.items.find((x) => x.key === p.key);
+    if (it) { it.qty--; if (it.qty <= 0) trip.items = trip.items.filter((x) => x !== it); }
+    save(); render();
+  });
+}
+
+// Bottom confirmation for every add/remove, with Undo — mis-scans and double-scans happen.
+let snackTimer;
+function snack(item, label, undo) {
+  document.querySelector('.snack')?.remove();
+  clearTimeout(snackTimer);
+  const s = el(`<div class="snack" role="status"><span class="sn-art">${item.image ? `<img src="${item.image}" alt="">` : item.emoji || '🏷️'}</span><span class="sn-t"><b>${item.name}</b><small>${label}</small></span><button class="sn-undo">Undo</button></div>`);
+  s.querySelector('img')?.addEventListener('error', (e) => e.target.replaceWith(item.emoji || '🏷️'));
+  s.querySelector('.sn-undo').onclick = () => { s.remove(); haptic(8); undo(); };
+  document.body.append(s);
+  requestAnimationFrame(() => s.classList.add('in'));
+  snackTimer = setTimeout(() => { s.classList.remove('in'); setTimeout(() => s.remove(), 250); }, 3500);
+}
+
+// Loose produce and anything else without a barcode: search by name or PLU sticker.
+function produceSheet() {
+  const s = el(`
+    <div class="sheet-wrap">
+      <div class="sheet tall">
+        <div class="grab"></div>
+        <h3>No barcode?</h3>
+        <input class="text-in" id="q" placeholder="Search, or type the PLU on the sticker (e.g. 4011)" inputmode="search" autocomplete="off" />
+        <div class="prod-grid" id="pg"></div>
+      </div>
+    </div>`);
+  document.body.append(s);
+  requestAnimationFrame(() => s.classList.add('open'));
+  const close = () => { s.classList.remove('open'); setTimeout(() => s.remove(), 300); };
+  s.onclick = (e) => { if (e.target === s) close(); };
+  const pg = s.querySelector('#pg');
+  const paint = (q = '') => {
+    q = q.trim().toLowerCase();
+    const list = CATALOG.filter((c) => c.produce || (!c.upc && !c.hidden))
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.plu === q);
+    pg.innerHTML = list.length ? '' : '<div class="muted sm">Nothing matches. Ask an associate with the ⋯ menu.</div>';
+    for (const c of list) {
+      const b = el(`<button class="prod" style="--tint:${c.tint}"><span>${c.emoji}</span><b>${c.name}</b><small>${c.plu ? `PLU ${c.plu} · ` : ''}${c.perLb ? `${money(c.perLb)}/lb` : c.each ? `${money(c.price)} each` : money(c.price)}</small></button>`);
+      b.onclick = () => (c.perLb ? weighSheet(c, close) : (close(), addItem(c)));
+      pg.append(b);
+    }
+  };
+  s.querySelector('#q').oninput = (e) => paint(e.target.value);
+  paint();
+}
+
+function weighSheet(c, closeParent) {
+  const host = document.querySelector('.sheet.tall');
+  const opts = [0.5, 1, 1.5, 2, 3, 4];
+  host.innerHTML = `
+    <div class="grab"></div>
+    <h3>${c.emoji} ${c.name}</h3>
+    <p class="muted" style="margin:-8px 0 12px">About how much? ${money(c.perLb)}/lb. Use the scale in produce, or estimate — it's checked if your trip is spot-checked.</p>
+    <div class="wt-grid">${opts.map((lb) => `<button data-lb="${lb}"><b>${lb} lb</b><small>${money(lb * c.perLb)}</small></button>`).join('')}</div>`;
+  host.querySelectorAll('[data-lb]').forEach((b) => b.onclick = () => {
+    const lb = +b.dataset.lb;
+    closeParent();
+    addItem({ ...c, key: `${c.key}-${lb}`, price: +(lb * c.perLb).toFixed(2), detail: `${lb} lb @ ${money(c.perLb)}/lb${c.plu ? ` · PLU ${c.plu}` : ''}`, weighed: lb });
+  });
 }
 
 function bumpTotal() { const t = root.querySelector('#total'); t?.classList.remove('bump'); void t?.offsetWidth; t?.classList.add('bump'); }
@@ -414,6 +499,7 @@ function nameUnknown(code, base, offline) {
 
 // ---------------- Finish: pay + issue pass ----------------
 function finish() {
+  if (!navigator.onLine) return toast('Paying needs a connection — try near the front of the store');
   const { total } = totals(trip.items);
   const sheet = el(`
     <div class="sheet-wrap">
@@ -577,9 +663,17 @@ function receiptView(t, { fromHistory }) {
         ${(t.adjustments || []).map((a) => `<div class="r-line muted sm"><span>${a.kind === 'add' ? 'Added' : 'Refunded'} at ${a.lane}: ${a.name}</span><span>${money(a.amount)}</span></div>`).join('')}
         <div class="r-foot">Auth ${t.authCode || '—'}${t.closedTxn ? ` · POS txn ${t.closedTxn}` : ''} · Exit Pass #${t.id}</div>
       </section>
+      <button class="btn ghost" id="share">Share or save receipt</button>
       ${fromHistory ? '' : '<button class="btn primary xl" id="again">Done</button>'}
     </main>`);
   v.querySelector('#again')?.addEventListener('click', () => { endTrip(); render(); });
+  v.querySelector('#share').onclick = async () => {
+    const tmp = document.createElement('textarea');
+    const lines = [`${STORE.name} #${STORE.number} · ${new Date(t.paidAt).toLocaleString()}`, ...t.items.map((i) => `${i.name}${i.qty > 1 ? ` x${i.qty}` : ''}  ${money(i.price * i.qty)}`), `Total paid ${money(total)} · ${t.card || ''}`, `Exit Pass #${t.id}`];
+    tmp.innerHTML = lines.join('\n'); // decode any entities from synced names
+    const text = tmp.value;
+    try { if (navigator.share) await navigator.share({ title: 'Vons receipt', text }); else { await navigator.clipboard.writeText(text); toast('Receipt copied'); } } catch {}
+  };
   v.querySelector('#back')?.addEventListener('click', () => { viewing = null; tab = 'trips'; render(); });
   return v;
 }
@@ -608,7 +702,10 @@ function helpSheet() {
   });
   bindDemoControls(s);
   s.querySelectorAll('.dt-links a').forEach((a) => a.addEventListener('click', close));
-  s.querySelector('#cancel').onclick = () => { close(); trip.status = 'done'; save(); trip = null; write(KEY, null); render(); };
+  s.querySelector('#cancel').onclick = () => {
+    if (trip.items.length && !confirm(`Cancel this trip? Your ${count(trip.items)} scanned items will be cleared. Nothing has been charged.`)) return;
+    close(); trip.status = 'done'; save(); trip = null; write(KEY, null); render();
+  };
 }
 
 export function toast(msg, ms = 2600) {
