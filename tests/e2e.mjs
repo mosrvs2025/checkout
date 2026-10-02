@@ -121,11 +121,20 @@ console.log('\nRegister lane (separate devices)');
     for (const d of '000000221474') await pos.click(`[data-k="${d}"]`);
     await pos.click('[data-k="ENTER"]'); await p.waitForSelector('.toast', { timeout: 6000 });
   });
+  await step('void a line → shopper refunded, item leaves their cart', async () => {
+    pos.once('dialog', (d) => d.accept());
+    await pos.locator('[data-line]', { hasText: 'Avocado' }).click();
+    await pos.waitForTimeout(1200);
+    assert(!(await p.textContent('.pass-screen')).includes('3 items'), 'phone not updated');
+    await p.waitForSelector('.toast', { timeout: 6000 });
+  });
   await step('complete blocked until checks, then phone gets receipt', async () => {
     assert(await pos.locator('#complete[disabled]').count(), 'complete enabled with open checks');
     for (const c of await pos.locator('.chk-btn').all()) await c.click();
     await pos.click('#complete'); await p.waitForSelector('.receipt', { timeout: 6000 });
-    assert((await p.textContent('.receipt')).includes('Lane 4'), 'no lane on receipt');
+    const r = await p.textContent('.receipt');
+    assert(r.includes('Lane 4'), 'no lane on receipt');
+    assert(r.includes('Refunded at Lane 4'), 'no refund line');
   });
   await step('used pass is rejected', async () => {
     await pos.waitForSelector('.sky-idle', { timeout: 8000 });

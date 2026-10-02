@@ -13,7 +13,7 @@ const LANES = [{ x: 24, label: '1' }, { x: 34, label: '2' }, { x: 44, label: '3'
 
 const trips = new Map(); // id -> trip (real + simulated)
 const feed = [];
-const stats = { exitTimes: [9, 11, 6, 14, 8, 10, 22, 7], passTrips: 41, laneTrips: 23, verified: 12, helps: [] };
+const stats = { scanOuts: 0, laneRecalls: 0,  exitTimes: [9, 11, 6, 14, 8, 10, 22, 7], passTrips: 41, laneTrips: 23, verified: 12, helps: [] };
 let mode, root;
 
 export function mountStore(r, opts) {
@@ -48,6 +48,8 @@ function onMsg(msg) {
     if (t && t.status === 'pass') { t.status = 'done'; t.doneAt = Date.now(); stats.exitTimes.push(Math.round((t.doneAt - t.arrivedAt) / 1000)); stats.verified++; log(`${msg.by} verified #${t.id} in ${fmtDuration(t.doneAt - t.arrivedAt)}`, 'good'); }
   }
   if (msg.type === 'help') { stats.helps.unshift({ ...msg, t: Date.now(), id: uid() }); log(`Help: "${msg.kind}" near ${msg.aisle}`, 'warn'); chime(); }
+  if (msg.type === 'pos.recall') stats.laneRecalls++;
+  if (msg.type === 'pos.close' && msg.lane === 'EXIT1') stats.scanOuts++;
   if (msg.type === 'pos.recall') log(`${msg.laneName} recalled Exit Pass #${msg.tripId} (${msg.method === 'scan-2d' ? 'scanned from phone' : 'keyed'})`, 'info');
   if (msg.type === 'pos.adjust') log(`${msg.laneName} ${msg.kind === 'add' ? 'added' : 'voided'} ${msg.item.name} on #${msg.tripId} · ${money(Math.abs(msg.amount))} ${msg.kind === 'add' ? 'charged' : 'refunded'} to card`, 'warn');
   if (msg.type === 'pos.close') {
@@ -216,7 +218,7 @@ function paintKpis() {
     ['Arriving at front ≤ 3 min', soon.length, `${soon.filter((t) => t.sim && !t.usesPass).length} headed to lanes`],
     ['Exit Pass: Done → door', `${avgExit()}s`, 'avg, last 20 trips', 'good'],
     ['Longest lane wait', fmtDuration(laneWait * 1000), `${LANES.reduce((s, l) => s + laneCount(l.label), 0)} people in lanes`, laneWait > 300 ? 'bad' : ''],
-    ['Trips with no checkout', `${share}%`, `${stats.passTrips} today`, 'good'],
+    ['Trips with no checkout', `${share}%`, `${stats.passTrips} today · ${stats.scanOuts} door scan-outs`, 'good'],
     ['Already paid, in carts', money(inCarts).replace(/\.\d+$/, ''), 'pre-authorized revenue'],
   ].map(([l, v, s, tone = '']) => `<div class="kpi ${tone}"><div class="k-l">${l}</div><div class="k-v">${v}</div><div class="k-s">${s}</div></div>`).join('');
 }

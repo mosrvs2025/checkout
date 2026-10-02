@@ -164,7 +164,7 @@ function linesHtml(lines, txn) {
   return lines.map((l) => {
     const chk = txn?.checks?.find((c) => c.key === l.key);
     const added = txn?.adjustments?.some((a) => a.kind === 'add' && a.item.key === l.key);
-    return `<div class="pl ${chk ? (chk.done ? 'chk done' : 'chk') : ''} ${added ? 'added' : ''}">
+    return `<div class="pl ${chk ? (chk.done ? 'chk done' : 'chk') : ''} ${added ? 'added' : ''}" ${txn ? `data-line="${l.key}" title="Tap to void"` : ''}>
       <span class="pl-q">${l.qty}</span><span class="pl-d">${l.name}${chk ? ` <em>${chk.done ? '✓ ' : '◆ '}${chk.reason.toUpperCase()}</em>` : ''}${added ? ' <em class="add">ADDED AT LANE</em>' : ''}</span>
       <span class="pl-p">${money(l.price * l.qty)}</span>${l.reg ? `<span class="pl-s">MEMBER SAVINGS -${money((l.reg - l.price) * l.qty)}</span>` : ''}</div>`;
   }).join('');
@@ -241,6 +241,14 @@ function renderRegister() {
   v.querySelector('#complete')?.addEventListener('click', completeExitPass);
   v.querySelector('#subtotal')?.addEventListener('click', tenderSale);
   v.querySelector('#scan').onclick = scan;
+  // Void a line on an Exit Pass basket (shopper didn't actually take it) → refund to their card.
+  v.querySelectorAll('[data-line]').forEach((row) => row.onclick = async () => {
+    const line = state.txn.lines.find((l) => l.key === row.dataset.line);
+    if (!line || !confirm(`Void one ${line.name.replace(/&amp;/g, '&').replace(/&#39;/g, "'")}? The shopper is refunded automatically.`)) return;
+    state.busy = true; flash('Voiding…');
+    await gw.voidItem(state.txn, line.key);
+    state.busy = false; state.msg = { text: `Voided ${line.name} · refunded to shopper's card`, tone: 'ok' }; beep(); render();
+  });
   paintArriving(); paintJournal();
   const l = v.querySelector('#lines'); l.scrollTop = l.scrollHeight;
 }

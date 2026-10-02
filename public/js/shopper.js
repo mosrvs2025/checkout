@@ -54,6 +54,12 @@ function endTrip() {
 export function mountShopper(r) {
   root = r;
   document.body.className = 'shopper-body';
+  // A trip left open from a previous day: paid ones go to history, unpaid ones are dropped.
+  if (trip && Date.now() - (trip.startedAt || 0) > 6 * 3600e3) {
+    if (trip.paidAt) { trip.status = 'done'; trip.doneAt ||= trip.paidAt; endTrip(); }
+    else { trip = null; write(KEY, null); }
+    setTimeout(() => toast('Your unfinished trip from earlier was cleared. Nothing extra was charged.', 4000), 400);
+  }
   // Dead zones are common in stores: keep scanning offline, re-sync the moment signal returns.
   addEventListener('online', () => { if (trip) save(); toast('Back online'); render(); });
   addEventListener('offline', () => render());
@@ -396,6 +402,7 @@ function matchList(item) {
 
 function addItem(p, fromEl) {
   matchList(p);
+  if (p.age && !trip.items.some((i) => i.age)) setTimeout(() => toast(`${p.age}+ item — have your ID ready at the exit`, 3500), 50);
   const existing = trip.items.find((i) => i.key === p.key);
   if (existing) existing.qty++;
   else trip.items.push({ ...p, qty: 1, addedAt: Date.now() });

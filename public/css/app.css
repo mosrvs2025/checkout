@@ -539,3 +539,4 @@ body { min-height: 100vh; }
 .lb-item.done i { background: var(--green); box-shadow: none; } .lb-item.done span { color: var(--mute); text-decoration: line-through; }
 .lb-item small { margin-left: auto; color: var(--mute); font-size: 12px; }
 .tile-deal { font-size: 10px; font-weight: 700; color: #c8102e; }
+.pl[data-line] { cursor: pointer; } .pl[data-line]:hover { background: #fff3f1; }
