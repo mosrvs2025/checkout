@@ -45,5 +45,5 @@ export async function itemFromCode(code) {
   const base = { key: 'upc-' + code, upc: code, price: priceFor(code), tint: '#F2F3F5', aisle: 'Aisle ' + (1 + (hashNum(code) % 14)) };
   if (!info.found) return { base, offline: raw.offline };
   const brand = info.brand && !info.name.toLowerCase().includes(info.brand.toLowerCase()) ? info.brand + ' ' : '';
-  return { item: { ...base, name: (brand + info.name).slice(0, 48), detail: [info.size, `UPC ${code}`].filter(Boolean).join(' · '), image: info.image, emoji: guessEmoji(info.category), age: isAlcohol(info.category) ? 21 : undefined } };
+  return { item: { ...base, name: (brand + info.name).slice(0, 48), detail: [info.size, `UPC ${code}`].filter(Boolean).join(' · '), image: info.image, emoji: guessEmoji(info.category), category: String(info.category || '').slice(0, 200), age: isAlcohol(info.category) ? 21 : undefined } };
 }

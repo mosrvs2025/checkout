@@ -1,4 +1,4 @@
-import { STORE, CATALOG, byUpc, money, uid, totals, savings, count, hashNum, haptic, el, bus, decidePass, fmtDuration, passPayload, recallCode } from './shared.js';
+import { STORE, CATALOG, byUpc, money, uid, totals, savings, DEALS, dealDiscount, count, hashNum, haptic, el, bus, decidePass, fmtDuration, passPayload, recallCode } from './shared.js';
 import { openScanner } from './scanner.js';
 import { itemFromCode, clean } from './products.js';
 import qrcode from '../vendor/qrcode.js';
@@ -6,6 +6,7 @@ import qrcode from '../vendor/qrcode.js';
 const KEY = 'exitpass.trip';
 const PROFILE = 'exitpass.profile';
 const HISTORY = 'exitpass.history';
+const LIST = 'exitpass.list';
 const AVG_LINE_MS = 10 * 60e3 + 40e3; // today's simulated wait in a staffed lane
 
 const read = (k, d = null) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
@@ -14,6 +15,8 @@ const write = (k, v) => { try { v == null ? localStorage.removeItem(k) : localSt
 let trip = read(KEY);
 let profile = read(PROFILE);
 let history = read(HISTORY, []);
+let list = read(LIST, []); // [{ text, done }]
+const saveList = () => write(LIST, list);
 let root, tick;
 let tab = 'home', viewing = null, onboardStep = 0, laneBanner = null;
 
@@ -25,7 +28,7 @@ function save(publish = true) {
 function newTrip() {
   trip = {
     id: uid(), name: 'You', real: true, status: 'shopping', shopperName: profile?.name || 'Guest',
-    card: profile?.card || 'Visa ···· 4242', startedAt: Date.now(), items: [], trust: 0.9, sensor: null,
+    card: profile?.card || 'Visa ···· 4242', startedAt: Date.now(), items: [], trust: trustScore(), sensor: null,
     zone: 'Entrance', progress: 0.05, adjustments: [], smartCart: smartCartOn(),
   };
   save();
@@ -34,6 +37,11 @@ function newTrip() {
 // Demo setting: is the shopper using a smart cart (Caper/Shopic-style scale + sensors)?
 // Off by default — Exit Pass works phone-only; the cart just lowers how often we spot-check.
 function smartCartOn() { try { return localStorage.getItem('exitpass.smartcart') === '1'; } catch { return false; } }
+
+// Trust grows with clean trips on this account; trusted shoppers get fewer spot checks.
+// (Production: server-side, per account, reset by any discrepancy found at a check.)
+function trustScore() { return Math.min(0.99, 0.85 + history.filter((t) => !(t.adjustments || []).some((a) => a.kind === 'add')).length * 0.02); }
+const trusted = (t) => (t.trust ?? 0) >= 0.95;
 
 function endTrip() {
   if (trip && trip.status === 'done' && !history.find((h) => h.id === trip.id)) {
@@ -187,7 +195,7 @@ function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good mor
 
 function home() {
   const savedMin = Math.round(history.reduce((s, t) => s + Math.max(0, AVG_LINE_MS - ((t.doneAt || 0) - (t.arrivedAt || 0))), 0) / 60e3);
-  const memberSaved = history.reduce((s, t) => s + savings(t.items), 0);
+  const memberSaved = history.reduce((s, t) => s + savings(t.items) + dealDiscount(t.items), 0);
   const v = el(`
     <main class="screen home">
       <header class="home-head"><div><div class="muted sm">${greeting()}</div><h1>${profile.name === 'there' ? 'Welcome' : profile.name}</h1></div><button class="avatar-btn" id="acct">${(profile.name[0] || 'G').toUpperCase()}</button></header>
@@ -200,8 +208,9 @@ function home() {
         <section class="stat-row">
           <div class="stat"><b>${savedMin}<small> min</small></b><span>line time skipped</span></div>
           <div class="stat"><b>${money(memberSaved)}</b><span>${profile.member ? 'Vons for U savings' : 'join Vons for U to save'}</span></div>
-          <div class="stat"><b>${history.length}</b><span>trips</span></div>
+          <div class="stat"><b>${history.length}</b><span>${trustScore() >= 0.95 ? '★ trusted shopper' : `trips · ${Math.max(0, Math.ceil((0.95 - trustScore()) / 0.02))} more to trusted`}</span></div>
         </section>
+        ${listCardHtml()}
         ${history.length ? `<h3 class="sec-h">Recent</h3>${historyList(3)}` : `<div class="hint-card"><b>Tip</b> Point your camera at any barcode in the store. Name brands are recognized automatically.</div>`}
       ` : ''}
       ${tab === 'trips' ? `<h3 class="sec-h">Your trips</h3>${history.length ? historyList(25) : '<div class="empty"><div class="empty-art">🧾</div><p>Receipts from your Exit Pass trips show up here.</p></div>'}` : ''}
@@ -212,7 +221,8 @@ function home() {
         <button data-t="account" class="${tab === 'account' ? 'on' : ''}"><i>◎</i>Account</button>
       </nav>
     </main>`);
-  v.querySelector('#go')?.addEventListener('click', () => { haptic(); newTrip(); render(); });
+  v.querySelector('#go')?.addEventListener('click', () => { haptic(); list.forEach((l) => { l.done = false; }); saveList(); newTrip(); render(); });
+  bindList(v);
   v.querySelector('#acct').onclick = () => { tab = 'account'; render(); };
   v.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { tab = b.dataset.t; haptic(5); render(); });
   v.querySelectorAll('[data-h]').forEach((b) => b.onclick = () => { viewing = history.find((h) => h.id === b.dataset.h); render(); });
@@ -280,7 +290,7 @@ function shop() {
         <div class="tc-label">Your cart</div>
         <div class="tc-total" id="total" aria-live="polite">${money(total)}</div>
         <div class="tc-sub">${n ? `${n} item${n > 1 ? 's' : ''} · tax included · ready to pay` : 'Scan your first item to begin'}</div>
-        ${savings(trip.items) > 0 ? `<div class="tc-save">Vons for U savings <b>−${money(savings(trip.items))}</b></div>` : ''}
+        ${savings(trip.items) + dealDiscount(trip.items) > 0 ? `<div class="tc-save">Vons for U savings <b>−${money(savings(trip.items) + dealDiscount(trip.items))}</b></div>` : ''}
         <div class="tc-status ${trip.sensor?.open ? 'warn' : ''}">
           ${trip.sensor?.open
             ? '<span class="dot amber"></span> Your cart felt something we didn\'t see'
@@ -290,6 +300,7 @@ function shop() {
         </div>
       </section>
       ${trip.sensor?.open ? sensorCard() : ''}
+      ${list.length ? listBarHtml() : ''}
       <section class="list" id="list">
         ${trip.items.length ? '' : `<div class="empty">
           <div class="empty-art">🛒</div>
@@ -308,18 +319,19 @@ function shop() {
       </footer>
     </main>`);
 
-  const list = v.querySelector('#list');
-  [...trip.items].reverse().forEach((i) => list.append(itemRow(i)));
+  const listEl = v.querySelector('#list');
+  [...trip.items].reverse().forEach((i) => listEl.append(itemRow(i)));
 
   const aisle = v.querySelector('#aisle');
   for (const p of CATALOG.filter((x) => !x.hidden)) {
-    const b = el(`<button class="tile" style="--tint:${p.tint}"><span class="tile-emoji">${p.emoji}</span><span class="tile-name">${p.name}</span><span class="tile-price">${p.reg ? `<s>${money(p.reg)}</s> ` : ''}${money(p.price)}</span></button>`);
+    const b = el(`<button class="tile" style="--tint:${p.tint}"><span class="tile-emoji">${p.emoji}</span><span class="tile-name">${p.name}</span><span class="tile-price">${p.reg ? `<s>${money(p.reg)}</s> ` : ''}${money(p.price)}</span>${DEALS[p.key] ? `<span class="tile-deal">${DEALS[p.key].label}</span>` : ''}</button>`);
     b.onclick = () => addItem(p, b);
     aisle.append(b);
   }
 
   v.querySelector('#scan').onclick = () => openScanner({ onCode: onBarcode });
   v.querySelector('#produce').onclick = produceSheet;
+  bindList(v);
   v.querySelector('#done').onclick = finish;
   v.querySelector('#help').onclick = helpSheet;
   v.querySelector('#resolve')?.addEventListener('click', () => resolveSensor(v));
@@ -351,7 +363,7 @@ function itemRow(i) {
       <div class="item-art" style="--tint:${i.tint || '#eee'}">${i.image ? `<img src="${i.image}" alt="" loading="lazy">` : i.emoji}</div>
       <div class="item-body">
         <div class="item-name">${i.name}${i.age ? ' <span class="tag">21+</span>' : ''}</div>
-        <div class="item-detail">${i.reg ? `<span class="club">Vons for U</span> ` : ''}${i.detail || ''}</div>
+        <div class="item-detail">${DEALS[i.key] ? `<span class="club">${DEALS[i.key].label}${i.qty % DEALS[i.key].n ? ` · add ${DEALS[i.key].n - (i.qty % DEALS[i.key].n)} more` : ' ✓'}</span> ` : i.reg ? '<span class="club">Vons for U</span> ' : ''}${i.detail || ''}</div>
       </div>
       <div class="qty">
         <button aria-label="Remove one" data-d="-1">−</button><span>${i.qty}</span><button aria-label="Add one" data-d="1">+</button>
@@ -371,7 +383,19 @@ function itemRow(i) {
   return row;
 }
 
+// Tick list entries off automatically when a scanned item matches ("milk" ↔ "Lucerne 2% Milk").
+function matchList(item) {
+  const name = [item.name, item.detail, item.tags, item.category].join(' ').toLowerCase();
+  for (const l of list) {
+    if (l.done) continue;
+    const words = l.text.toLowerCase().split(/\s+/).filter((w) => w.length > 2).map((w) => w.replace(/(es|s)$/, ''));
+    if (words.length && words.every((w) => name.includes(w))) { l.done = true; saveList(); return l; }
+  }
+  return null;
+}
+
 function addItem(p, fromEl) {
+  matchList(p);
   const existing = trip.items.find((i) => i.key === p.key);
   if (existing) existing.qty++;
   else trip.items.push({ ...p, qty: 1, addedAt: Date.now() });
@@ -410,6 +434,34 @@ function snack(item, label, undo) {
 }
 
 // Loose produce and anything else without a barcode: search by name or PLU sticker.
+function listCardHtml() {
+  return `<section class="list-card">
+    <div class="lc-h"><b>Shopping list</b><span class="muted sm">${list.length ? `${list.length} item${list.length > 1 ? 's' : ''}` : 'checks itself off as you scan'}</span></div>
+    <div class="lc-items">${list.map((l, i) => `<span class="chip">${l.text}<button aria-label="Remove ${l.text}" data-rm="${i}">×</button></span>`).join('')}</div>
+    <form class="lc-add" id="ladd"><input class="text-in" placeholder="Add milk, eggs, coffee…" maxlength="40" /><button class="btn sm primary">Add</button></form>
+  </section>`;
+}
+
+function listBarHtml() {
+  const left = list.filter((l) => !l.done);
+  const aisleOf = (text) => CATALOG.find((c) => text.toLowerCase().split(/\s+/).some((w) => w.length > 2 && c.name.toLowerCase().includes(w.replace(/(es|s)$/, ''))))?.aisle;
+  return `<details class="list-bar" ${left.length ? 'open' : ''}>
+    <summary>${left.length ? `<b>${left.length} left on your list</b>` : '<b>✓ List complete</b>'}<span class="muted sm"> · ${list.length - left.length}/${list.length}</span></summary>
+    <div class="lb-items">${list.map((l, i) => `<button class="lb-item ${l.done ? 'done' : ''}" data-tog="${i}"><i>${l.done ? '✓' : ''}</i><span>${l.text}</span>${!l.done && aisleOf(l.text) ? `<small>${aisleOf(l.text)}</small>` : ''}</button>`).join('')}</div>
+  </details>`;
+}
+
+function bindList(v) {
+  v.querySelector('#ladd')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const inp = e.target.querySelector('input');
+    const text = clean(inp.value).slice(0, 40);
+    if (text) { list.push({ text, done: false }); saveList(); haptic(6); render(); setTimeout(() => root.querySelector('#ladd input')?.focus(), 0); }
+  });
+  v.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { list.splice(+b.dataset.rm, 1); saveList(); render(); });
+  v.querySelectorAll('[data-tog]').forEach((b) => b.onclick = () => { const l = list[+b.dataset.tog]; l.done = !l.done; saveList(); haptic(6); render(); });
+}
+
 function produceSheet() {
   const s = el(`
     <div class="sheet-wrap">
@@ -500,15 +552,19 @@ function nameUnknown(code, base, offline) {
 // ---------------- Finish: pay + issue pass ----------------
 function finish() {
   if (!navigator.onLine) return toast('Paying needs a connection — try near the front of the store');
-  const { total } = totals(trip.items);
+  const bag = CATALOG.find((c) => c.key === 'bag');
+  let bags = Math.min(5, profile?.bags ?? 0);
+  const totalWith = () => totals([...trip.items, ...(bags ? [{ ...bag, qty: bags }] : [])]).total;
+  const total = totalWith();
   const sheet = el(`
     <div class="sheet-wrap">
       <div class="sheet pay">
         <div class="grab"></div>
         <div class="pay-row"><span class="pay-logo">${(trip.card || '').startsWith('Apple') ? ' Pay' : 'Exit Pass'}</span><button class="link" id="x">Cancel</button></div>
-        <div class="pay-line"><span>VONS #${STORE.number}</span><b>${money(total)}</b></div>
+        <div class="pay-line"><span>VONS #${STORE.number}</span><b id="ptotal">${money(total)}</b></div>
+        <div class="pay-line muted bags"><span>Paper bags · $0.10 each <small>(CA law)</small></span><span class="qty"><button aria-label="Fewer bags" data-b="-1">−</button><span id="bagn">${bags}</span><button aria-label="More bags" data-b="1">+</button></span></div>
         <div class="pay-line muted"><span>Pay with</span><span>${trip.card}</span></div>
-        ${savings(trip.items) > 0 ? `<div class="pay-line muted"><span>Vons for U savings</span><span class="green-t">−${money(savings(trip.items))}</span></div>` : ''}
+        ${savings(trip.items) + dealDiscount(trip.items) > 0 ? `<div class="pay-line muted"><span>Vons for U savings</span><span class="green-t">−${money(savings(trip.items) + dealDiscount(trip.items))}</span></div>` : ''}
         <div class="pay-line muted"><span>Items</span><span>${count(trip.items)} · ${trip.smartCart ? 'weight-checked by smart cart' : 'scanned by you'}</span></div>
         <button class="btn primary xl" id="confirm">${(trip.card || '').startsWith('Apple') ? 'Pay with Face ID' : 'Pay & get Exit Pass'}</button>
         <div class="pay-progress"><div class="spinner"></div><span>Authorizing…</span></div>
@@ -519,7 +575,17 @@ function finish() {
   const close = () => { sheet.classList.remove('open'); setTimeout(() => sheet.remove(), 300); };
   sheet.querySelector('#x').onclick = close;
   sheet.onclick = (e) => { if (e.target === sheet) close(); };
+  sheet.querySelectorAll('[data-b]').forEach((b) => b.onclick = () => {
+    bags = Math.max(0, Math.min(20, bags + +b.dataset.b)); haptic(6);
+    sheet.querySelector('#bagn').textContent = bags;
+    sheet.querySelector('#ptotal').textContent = money(totalWith());
+  });
   sheet.querySelector('#confirm').onclick = () => {
+    if (bags) {
+      const ex = trip.items.find((i) => i.key === 'bag');
+      ex ? (ex.qty += bags) : trip.items.push({ ...bag, qty: bags, addedAt: Date.now() });
+    }
+    profile.bags = bags; write(PROFILE, profile); // remember for next time
     sheet.querySelector('.sheet').classList.add('paying');
     haptic(15);
     setTimeout(() => {
@@ -607,6 +673,7 @@ function exitPass() {
           <span class="pc-live"><span class="dot pulse"></span><span id="clock"></span></span>
         </div>
         <div class="pc-title">Paid. You're good to go.</div>
+        ${trusted(trip) ? '<div class="trust-badge">★ Trusted shopper · fewer checks</div>' : ''}
         <div class="pc-lane">Scan out at the exit — about 2 seconds, no checks.</div>
         <div class="pc-code" id="code"></div>
         <div class="pc-recall">${fmtRecall(recallCode(trip.id))}</div>
@@ -657,7 +724,8 @@ function receiptView(t, { fromHistory }) {
         <div class="r-head"><b>${STORE.name} #${STORE.number}</b><span>${new Date(t.paidAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div>
         ${t.items.map((i) => `<div class="r-line"><span>${i.emoji || '🏷️'} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}${i.addedAtLane ? ` <small class="muted">· added at ${i.addedAtLane}</small>` : ''}</span><span>${money(i.price * i.qty)}</span></div>`).join('')}
         <div class="r-line sep"><span>Subtotal</span><span>${money(sub + saved)}</span></div>
-        ${saved > 0 ? `<div class="r-line green-t"><span>Vons for U savings</span><span>−${money(saved)}</span></div>` : ''}
+        ${saved > 0 ? `<div class="r-line green-t"><span>Vons for U prices</span><span>−${money(saved)}</span></div>` : ''}
+        ${dealDiscount(t.items) > 0 ? `<div class="r-line green-t"><span>Vons for U deals</span><span>−${money(dealDiscount(t.items))}</span></div>` : ''}
         <div class="r-line"><span>Tax</span><span>${money(tax)}</span></div>
         <div class="r-line total"><span>Paid · ${t.card || 'Visa ···· 4242'}</span><span>${money(total)}</span></div>
         ${(t.adjustments || []).map((a) => `<div class="r-line muted sm"><span>${a.kind === 'add' ? 'Added' : 'Refunded'} at ${a.lane}: ${a.name}</span><span>${money(a.amount)}</span></div>`).join('')}

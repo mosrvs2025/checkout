@@ -523,3 +523,19 @@ body { min-height: 100vh; }
 .receipt .btn.ghost { width: 100%; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 :focus-visible { outline: 3px solid #0a84ff; outline-offset: 2px; }
+.pay-line.bags { align-items: center; } .pay-line.bags small { color: var(--mute); font-size: 11px; }
+.trust-badge { display: inline-block; font-size: 12px; font-weight: 700; background: rgba(255,255,255,.2); padding: 4px 9px; border-radius: 99px; margin-bottom: 6px; }
+.list-card { background: var(--soft); border-radius: 20px; padding: 14px; display: grid; gap: 10px; }
+.lc-h { display: flex; justify-content: space-between; align-items: baseline; }
+.lc-items { display: flex; flex-wrap: wrap; gap: 6px; } .lc-items:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: #fff; border-radius: 99px; padding: 5px 4px 5px 12px; font-size: 14px; font-weight: 500; }
+.chip button { width: 22px; height: 22px; border-radius: 50%; color: var(--mute); font-size: 16px; line-height: 1; }
+.lc-add { display: flex; gap: 8px; } .lc-add .text-in { height: 40px; font-size: 15px; background: #fff; } .lc-add .btn { height: 40px; }
+.list-bar { margin-top: 12px; background: var(--soft); border-radius: 16px; padding: 12px 14px; }
+.list-bar summary { cursor: pointer; font-size: 15px; list-style: none; } .list-bar summary::-webkit-details-marker { display: none; }
+.lb-items { display: grid; gap: 2px; margin-top: 8px; }
+.lb-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; text-align: left; font-size: 15px; }
+.lb-item i { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px #c9c9cf; display: grid; place-items: center; font-style: normal; font-size: 13px; color: #fff; flex: none; }
+.lb-item.done i { background: var(--green); box-shadow: none; } .lb-item.done span { color: var(--mute); text-decoration: line-through; }
+.lb-item small { margin-left: auto; color: var(--mute); font-size: 12px; }
+.tile-deal { font-size: 10px; font-weight: 700; color: #c8102e; }

@@ -202,7 +202,7 @@ function renderRegister() {
               </div>
               <div class="sky-totals">
                 <div><span>ITEMS</span><b>${t.items || 0}</b></div>
-                <div><span>SUBTOTAL</span><b>${money(t.sub || 0)}</b></div>
+                <div><span>SUBTOTAL${t.deals ? ' (DEALS)' : ''}</span><b>${money((t.sub || 0) - (t.deals || 0))}</b></div>
                 <div><span>TAX</span><b>${money(t.tax || 0)}</b></div>
                 <div class="tot"><span>${ep ? 'PAID' : 'TOTAL'}</span><b>${money(t.total || 0)}</b></div>
               </div>

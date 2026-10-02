@@ -5,21 +5,21 @@ export const STORE = { name: 'Vons', number: '2118', city: 'Pasadena' };
 // Real UPCs where we know them, so scanning the actual product in-store hits the catalog.
 // Anything else that's scanned is looked up on Open Food Facts and priced deterministically.
 export const CATALOG = [
-  { key: 'bananas', plu: '4011', produce: true, perLb: 0.79, name: 'Organic Bananas', detail: '2.1 lb · $0.79/lb', price: 1.66, emoji: '🍌', tint: '#FFF3C4', aisle: 'Produce' },
-  { key: 'avocado', plu: '4225', reg: 6.99, name: 'Hass Avocados', detail: 'Bag of 4', price: 5.99, emoji: '🥑', tint: '#E3F2D5', aisle: 'Produce' },
-  { key: 'strawberries', reg: 5.99, name: 'Strawberries', detail: '1 lb clamshell', price: 4.49, emoji: '🍓', tint: '#FDE0E0', aisle: 'Produce' },
+  { key: 'bananas', tags: 'banana fruit', plu: '4011', produce: true, perLb: 0.79, name: 'Organic Bananas', detail: '2.1 lb · $0.79/lb', price: 1.66, emoji: '🍌', tint: '#FFF3C4', aisle: 'Produce' },
+  { key: 'avocado', tags: 'avocado', plu: '4225', reg: 6.99, name: 'Hass Avocados', detail: 'Bag of 4', price: 5.99, emoji: '🥑', tint: '#E3F2D5', aisle: 'Produce' },
+  { key: 'strawberries', tags: 'berries fruit', reg: 5.99, name: 'Strawberries', detail: '1 lb clamshell', price: 4.49, emoji: '🍓', tint: '#FDE0E0', aisle: 'Produce' },
   { key: 'milk', upc: '041303001110', name: 'Lucerne 2% Milk', detail: '1 gallon', price: 4.79, emoji: '🥛', tint: '#E8F0FB', aisle: 'Dairy' },
-  { key: 'eggs', name: 'Large Brown Eggs', detail: 'Dozen, cage-free', price: 6.29, emoji: '🥚', tint: '#F6EBDD', aisle: 'Dairy' },
-  { key: 'bread', name: 'Sourdough Loaf', detail: 'Bakery, baked today', price: 4.99, emoji: '🍞', tint: '#F6E6D2', aisle: 'Bakery' },
-  { key: 'coffee', reg: 13.49, upc: '762111206329', name: 'Starbucks Pike Place', detail: '12 oz ground', price: 10.99, emoji: '☕️', tint: '#EADFD6', aisle: 'Aisle 7' },
-  { key: 'coke', reg: 10.99, upc: '049000028911', name: 'Coca-Cola 12 pack', detail: '12 fl oz cans', price: 8.99, emoji: '🥤', tint: '#FBE0E0', aisle: 'Aisle 9' },
-  { key: 'pasta', name: 'Barilla Spaghetti', detail: '16 oz', price: 2.29, emoji: '🍝', tint: '#FCEFD3', aisle: 'Aisle 4' },
-  { key: 'salmon', reg: 23.79, name: 'Atlantic Salmon', detail: '1.4 lb · $13.99/lb', price: 19.59, emoji: '🐟', tint: '#FFE5DA', aisle: 'Seafood', highValue: true },
-  { key: 'ribeye', name: 'USDA Prime Ribeye', detail: '2 steaks · 1.8 lb', price: 41.38, emoji: '🥩', tint: '#FBDCDC', aisle: 'Meat', highValue: true },
-  { key: 'wine', name: 'Josh Cabernet', detail: '750 ml', price: 14.99, emoji: '🍷', tint: '#EBDDF0', aisle: 'Wine', age: 21 },
-  { key: 'beer', name: 'Modelo Especial', detail: '12 pack bottles', price: 19.99, emoji: '🍺', tint: '#FFF1CC', aisle: 'Beer', age: 21 },
-  { key: 'icecream', reg: 6.99, name: "Ben & Jerry's", detail: 'Half Baked, pint', price: 5.99, emoji: '🍨', tint: '#F1E8FA', aisle: 'Frozen' },
-  { key: 'chips', reg: 5.49, name: 'Kettle Chips', detail: 'Sea salt, 8 oz', price: 4.29, emoji: '🥔', tint: '#FDF0D0', aisle: 'Aisle 10' },
+  { key: 'eggs', tags: 'eggs', name: 'Large Brown Eggs', detail: 'Dozen, cage-free', price: 6.29, emoji: '🥚', tint: '#F6EBDD', aisle: 'Dairy' },
+  { key: 'bread', tags: 'bread', name: 'Sourdough Loaf', detail: 'Bakery, baked today', price: 4.99, emoji: '🍞', tint: '#F6E6D2', aisle: 'Bakery' },
+  { key: 'coffee', tags: 'coffee', reg: 13.49, upc: '762111206329', name: 'Starbucks Pike Place', detail: '12 oz ground', price: 10.99, emoji: '☕️', tint: '#EADFD6', aisle: 'Aisle 7' },
+  { key: 'coke', tags: 'soda pop cola', reg: 10.99, upc: '049000028911', name: 'Coca-Cola 12 pack', detail: '12 fl oz cans', price: 8.99, emoji: '🥤', tint: '#FBE0E0', aisle: 'Aisle 9' },
+  { key: 'pasta', tags: 'pasta noodles', name: 'Barilla Spaghetti', detail: '16 oz', price: 2.29, emoji: '🍝', tint: '#FCEFD3', aisle: 'Aisle 4' },
+  { key: 'salmon', tags: 'fish seafood', reg: 23.79, name: 'Atlantic Salmon', detail: '1.4 lb · $13.99/lb', price: 19.59, emoji: '🐟', tint: '#FFE5DA', aisle: 'Seafood', highValue: true },
+  { key: 'ribeye', tags: 'steak beef meat', name: 'USDA Prime Ribeye', detail: '2 steaks · 1.8 lb', price: 41.38, emoji: '🥩', tint: '#FBDCDC', aisle: 'Meat', highValue: true },
+  { key: 'wine', tags: 'wine red', name: 'Josh Cabernet', detail: '750 ml', price: 14.99, emoji: '🍷', tint: '#EBDDF0', aisle: 'Wine', age: 21 },
+  { key: 'beer', tags: 'beer', name: 'Modelo Especial', detail: '12 pack bottles', price: 19.99, emoji: '🍺', tint: '#FFF1CC', aisle: 'Beer', age: 21 },
+  { key: 'icecream', tags: 'ice cream dessert', reg: 6.99, name: "Ben & Jerry's", detail: 'Half Baked, pint', price: 5.99, emoji: '🍨', tint: '#F1E8FA', aisle: 'Frozen' },
+  { key: 'chips', tags: 'chips snack', reg: 5.49, name: 'Kettle Chips', detail: 'Sea salt, 8 oz', price: 4.29, emoji: '🥔', tint: '#FDF0D0', aisle: 'Aisle 10' },
   // Loose produce: no barcode. Shoppers add these by name or the PLU sticker number.
   { key: 'apples', plu: '3283', name: 'Honeycrisp Apples', perLb: 2.99, price: 2.99, emoji: '🍎', tint: '#FDE3E1', aisle: 'Produce', produce: true, hidden: true },
   { key: 'tomatoes', plu: '4087', name: 'Roma Tomatoes', perLb: 1.49, price: 1.49, emoji: '🍅', tint: '#FDE3E1', aisle: 'Produce', produce: true, hidden: true },
@@ -29,7 +29,7 @@ export const CATALOG = [
   { key: 'lemons', plu: '4053', name: 'Lemons', each: true, price: 0.69, emoji: '🍋', tint: '#FFF6C9', aisle: 'Produce', produce: true, hidden: true },
   { key: 'peppers', plu: '4065', name: 'Green Bell Peppers', each: true, price: 0.99, emoji: '🫑', tint: '#E3F2D5', aisle: 'Produce', produce: true, hidden: true },
   { key: 'bag', upc: '000000221474', name: 'Paper Bag Charge', detail: 'Required by CA law', price: 0.10, emoji: '🛍️', tint: '#F1EDE4', aisle: 'Front', hidden: true },
-  { key: 'flowers', name: 'Sunflower Bouquet', detail: 'Floral', price: 12.99, emoji: '🌻', tint: '#FFF2C2', aisle: 'Floral' },
+  { key: 'flowers', tags: 'flowers', name: 'Sunflower Bouquet', detail: 'Floral', price: 12.99, emoji: '🌻', tint: '#FFF2C2', aisle: 'Floral' },
 ];
 export const byKey = Object.fromEntries(CATALOG.map((p) => [p.key, p]));
 export const byUpc = Object.fromEntries(CATALOG.filter((p) => p.upc).map((p) => [p.upc, p]));
@@ -41,7 +41,23 @@ export const uid = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 export const sum = (items) => items.reduce((s, i) => s + i.price * i.qty, 0);
 export const count = (items) => items.reduce((s, i) => s + i.qty, 0);
 export const savings = (items) => items.reduce((s, i) => s + (i.reg ? (i.reg - i.price) * i.qty : 0), 0);
-export const totals = (items) => { const sub = sum(items); const tax = sub * TAX; return { sub, tax, total: sub + tax }; };
+// Vons for U multi-buy deals, applied automatically (same math on the phone and the lane).
+export const DEALS = {
+  coke: { n: 2, price: 16, label: '2 for $16' },
+  icecream: { n: 2, price: 10, label: '2 for $10' },
+  chips: { n: 2, off: 1, label: 'Buy 2, save $1' },
+};
+export function dealDiscount(items) {
+  let d = 0;
+  for (const i of items) {
+    const deal = DEALS[i.key];
+    if (!deal) continue;
+    const sets = Math.floor(i.qty / deal.n);
+    d += sets * (deal.off ?? deal.n * i.price - deal.price);
+  }
+  return Math.round(d * 100) / 100;
+}
+export const totals = (items) => { const sub = sum(items); const deals = dealDiscount(items); const tax = (sub - deals) * TAX; return { sub, deals, tax, total: sub - deals + tax }; };
 
 export function hashNum(str) { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return Math.abs(h); }
 
@@ -166,7 +182,9 @@ export function decidePass(trip, { force } = {}) {
 
   // Random audit keeps everyone honest; seeded per-trip so it's stable across devices.
   // With a smart cart weighing every item, ~1 in 10 trips gets one; phone-only, ~1 in 5.
-  const audit = force === 'audit' || (force == null && hashNum(trip.id) % (trip.smartCart ? 10 : 5) === 0);
+  // Trusted shoppers (clean history) are audited half as often.
+  const every = (trip.smartCart ? 10 : 5) * ((trip.trust ?? 0) >= 0.95 ? 2 : 1);
+  const audit = force === 'audit' || (force == null && hashNum(trip.id) % every === 0);
   if (audit && trip.items.length >= 4) {
     const pool = [...trip.items].sort((a, b) => hashNum(trip.id + a.key) - hashNum(trip.id + b.key));
     for (const i of pool.slice(0, 2)) add(i, 'Random spot check', 'audit');
