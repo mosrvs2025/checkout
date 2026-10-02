@@ -63,6 +63,30 @@ Open `http://localhost:5173/#/demo`. Local sync between devices works out of the
 
 Account → Demo controls on the phone can force a green pass or a spot-check.
 
+## For shoppers, beyond the core flow
+
+- **Shopping list** that ticks itself off as you scan, and shows the aisle for what's left
+- **No-barcode items** (🥕): loose produce by name or PLU sticker, with a weight estimate for per-pound items
+- **Undo** on every add and remove
+- **Vons for U** member prices and multi-buy deals, applied the same way on the phone and at the lane
+- **Bags** at checkout ($0.10, CA law); the count is remembered
+- **Trusted shopper:** clean trips earn fewer spot checks
+- **Works in dead zones:** keep scanning offline; paying waits for signal and re-syncs automatically
+- The screen stays on while the pass is showing. Receipts can be shared or copied.
+
+## Tests
+
+```bash
+npm i -D playwright && npx playwright install chromium   # once
+npm test
+```
+
+`tests/e2e.mjs` drives real browsers, using separate browser contexts as separate devices that only talk through `/api/sync`. It covers the shopper flows, a register lane (keyed recall, missed item, checks, used-pass rejection, regular sale), the exit and self-checkout, the security checks, and **camera scanning through fake camera feeds**: a real EAN-13 product barcode, and the register reading the pass QR off the phone. Already have Playwright somewhere? Set `PLAYWRIGHT=/path/to/playwright/index.mjs`.
+
+## Security
+
+What's protected now, and what a production version still needs: **[SECURITY.md](SECURITY.md)**.
+
 ## Architecture
 
 Static ES modules in `public/` with no build step. Third-party code is bundled in `public/vendor/`: the barcode decoder (ZXing WASM) and a QR code generator.

@@ -19,6 +19,11 @@ export class PosError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
+// Passes closed anywhere in the store (any lane, SCO or the door) — so a reused pass gets a
+// clear answer instead of "not found".
+const closedAt = new Map();
+bus.on((m) => { if (m.type === 'pos.close') closedAt.set(m.tripId, m.laneName); });
+
 const latency = (min = 180, max = 520) => new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
 const auth = () => String(Math.floor(100000 + Math.random() * 899999));
 
@@ -28,6 +33,7 @@ export function parseCode(raw) {
   if (m) return { tripId: m[1], token: m[2], method: 'scan-2d' };
   if (/^98\d{10}$/.test(s)) {
     for (const t of bus.trips.values()) if (recallCode(t.id) === s) return { tripId: t.id, method: 'keyed-recall' };
+    for (const id of closedAt.keys()) if (recallCode(id) === s) return { tripId: id, method: 'keyed-recall' };
     return { tripId: null, method: 'keyed-recall' };
   }
   if (/^[A-Z0-9]{6}$/.test(s)) return { tripId: s, method: 'keyed-id' };
@@ -65,6 +71,7 @@ export async function recall(raw, lane) {
   const parsed = parseCode(raw);
   if (!parsed) throw new PosError('E_FORMAT', 'Not an Exit Pass code');
   const trip = parsed.tripId && bus.trips.get(parsed.tripId);
+  if (!trip && closedAt.has(parsed.tripId)) throw new PosError('E_CLOSED', `Pass already used at ${closedAt.get(parsed.tripId)}`);
   if (!trip) throw new PosError('E_NOT_FOUND', 'Basket not found. Ask the shopper to refresh their pass.');
   if (trip.status === 'shopping' || !trip.pass) throw new PosError('E_NOT_PAID', 'Shopper hasn\'t tapped Done yet');
   if (trip.status !== 'pass' && trip.status !== 'exit') throw new PosError('E_CLOSED', 'This pass was already used');
@@ -113,6 +120,7 @@ export async function close(txn, operator = 'Maria') {
   if (txn.checks.some((c) => !c.done)) throw new PosError('E_CHECKS', 'Finish the checks first');
   await latency(250, 600);
   const r = recompute(txn);
+  closedAt.set(txn.tripId, txn.lane.name);
   const receipt = { txnId: txn.txnId, lane: txn.lane.name, operator, closedAt: Date.now(), seconds: Math.round((Date.now() - txn.openedAt) / 1000), ...r };
   bus.send({ type: 'pos.close', tripId: txn.tripId, lane: txn.lane.id, laneName: txn.lane.name, txnId: txn.txnId, by: operator, seconds: receipt.seconds, total: r.total });
   ej(txn.lane.id, `CLOSE ${txn.txnId} · ${r.items} items · ${money(r.total)} · ${receipt.seconds}s · OP ${operator}`);
